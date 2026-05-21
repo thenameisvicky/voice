@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "wAI Backend (local)",
+      "skipFiles": ["<node_internals>/**"],
+      "program": "${workspaceFolder}/src/server.js",
+      "cwd": "${workspaceFolder}/src",
+      "env": {
+        "PORT": "3000",
+        "MONGO_URI": "mongodb+srv://vigneshbalasubramaniyan3:o1PbEFwyUHjUfcME@digitaltwincluster.mn6ccor.mongodb.net/wai_dispute?appName=digitalTwinCluster&retryWrites=true&w=majority",
+        "BOLNA_API_KEY": "bn-20c99a9ca668463c9c067660dabb1c9f",
+        "BOLNA_AGENT_ID": "3bb0cb8c-9ad7-40aa-9fb3-589b0bdbacc3",
+        "BOLNA_API_BASE": "https://api.bolna.ai"
+      }
+    }
+  ]
+}
