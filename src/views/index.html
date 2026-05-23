@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Operations Ledger Control Desk</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --text: #f8fafc;
+        --muted: #94a3b8;
+        --border: #334155;
+        --accent: #3b82f6;
+        --accent-hover: #2563eb;
+        --warn-bg: rgba(245, 158, 11, 0.1);
+        --warn-fg: #f59e0b;
+        --ok-bg: rgba(16, 185, 129, 0.1);
+        --ok-fg: #10b981;
+        --shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        padding-bottom: 40px;
+      }
+      header.banner {
+        background: #020617;
+        padding: 24px 40px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      header.banner h1 {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+      }
+      .pulse-badge {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: #10b981;
+        font-weight: 600;
+      }
+      .pulse-dot {
+        width: 8px;
+        height: 8px;
+        background: #10b981;
+        border-radius: 50%;
+        animation: pulse 2s infinite;
+      }
+      @keyframes pulse {
+        0% {
+          transform: scale(0.9);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.2);
+          opacity: 0.5;
+        }
+        100% {
+          transform: scale(0.9);
+          opacity: 1;
+        }
+      }
+      main {
+        max-width: 1120px;
+        margin: 40px auto;
+        padding: 0 24px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 28px;
+        box-shadow: var(--shadow);
+      }
+      .card h2 {
+        margin: 0 0 6px;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      .subtitle {
+        margin: 0 0 24px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .grid {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      .grid th {
+        text-align: left;
+        font-size: 11px;
+        text-transform: uppercase;
+        color: var(--muted);
+        padding: 12px 16px;
+        background: rgba(0, 0, 0, 0.15);
+        border-bottom: 1px solid var(--border);
+      }
+      .grid td {
+        padding: 16px;
+        border-bottom: 1px solid var(--border);
+        font-size: 14px;
+      }
+      .grid tr:last-child td {
+        border-bottom: none;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .badge.warn {
+        background: var(--warn-bg);
+        color: var(--warn-fg);
+      }
+      .badge.ok {
+        background: var(--ok-bg);
+        color: var(--ok-fg);
+      }
+      .btn-action {
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        padding: 8px 16px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .btn-action:hover {
+        background: var(--accent-hover);
+      }
+      .btn-action:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .meta-details {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 4px;
+        display: block;
+      }
+      .status-line {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 20px;
+        display: block;
+        text-align: right;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="banner">
+      <div>
+        <h1>Operations Ledger Control Desk</h1>
+        <p style="margin: 4px 0 0; color: var(--muted); font-size: 13px">
+          Automated Accounts Receivable Reconciliation Engine
+        </p>
+      </div>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>Pending Payments</h2>
+        <p class="subtitle">
+          System triggers outbound voice verification parameters automatically
+          upon detecting collection flags.
+        </p>
+
+        <table class="grid">
+          <thead>
+            <tr>
+              <th>Client Name</th>
+              <th>Invoice Reference</th>
+              <th>Pending Mismatch</th>
+              <th>Resolution Status</th>
+              <th>Operator Action</th>
+            </tr>
+          </thead>
+          <tbody id="ledger-body">
+            <tr>
+              <td colspan="5" style="text-align: center; color: var(--muted)">
+                Loading cluster ledgers&hellip;
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        <span class="status-line" id="status-line"></span>
+      </section>
+    </main>
+
+    <script>
+      const API_BASE = "";
+
+      const ledgerBody = document.getElementById("ledger-body");
+      const statusLine = document.getElementById("status-line");
+
+      function formatCurrency(num) {
+        return new Intl.NumberFormat("en-IN", {
+          style: "currency",
+          currency: "INR",
+          maximumFractionDigits: 0,
+        }).format(num);
+      }
+
+      async function triggerOutboundCall(invoiceId, btnElement) {
+        btnElement.disabled = true;
+        btnElement.textContent = "⚡ Streaming Data...";
+        try {
+          const res = await fetch(`${API_BASE}/api/trigger-call`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ invoiceId }),
+          });
+          const data = await res.json();
+          statusLine.textContent = `Telephony Core Signal: ${data.status}`;
+          setTimeout(loadLedger, 3000);
+        } catch (err) {
+          statusLine.textContent = "API Execution error caught.";
+        }
+      }
+
+      async function loadLedger() {
+        try {
+          const res = await fetch(`${API_BASE}/api/invoice-state`);
+          const data = await res.json();
+
+          ledgerBody.innerHTML = data
+            .map((row) => {
+              const isResolved = row.status === "RESOLVED_COMPLIANCE";
+              return `
+            <tr>
+              <td><strong>${row.clientName}</strong><br><span style="font-size:11px; color:var(--muted);">${row.clientPhone}</span></td>
+              <td><code>${row.invoiceId}</code></td>
+              <td style="font-weight:600; color:${isResolved ? "var(--muted)" : "#f43f5e"}">${formatCurrency(row.balanceDue)}</td>
+              <td>
+                <span class="badge ${isResolved ? "ok" : "warn"}">${isResolved ? "Account Settle Cleared" : "Pending"}</span>
+                ${isResolved ? `<span class="meta-details">Reason: ${row.disputeReason} <br> UTR: ${row.utrReference}</span>` : ""}
+              </td>
+              <td>
+                <button class="btn-action" ${isResolved ? "disabled" : ""} onclick="triggerOutboundCall('${row.invoiceId}', this)">
+                  ${isResolved ? "Complete" : "📞 Call Client"}
+                </button>
+              </td>
+            </tr>
+          `;
+            })
+            .join("");
+          statusLine.textContent = `Last synchronized clock tick: ${new Date().toLocaleTimeString()}`;
+        } catch (err) {
+          ledgerBody.innerHTML = `<tr><td colspan="5] style="color:#f43f5e;">Cluster communications severed.</td></tr>`;
+        }
+      }
+
+      loadLedger();
+      setInterval(loadLedger, 4000);
+    </script>
+  </body>
+</html>

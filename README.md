@@ -1,4 +1,4 @@
-# wAI Dispute Resolver
+# wAI Pending Resolver
 
 Demo stack for **Bolna-driven automated invoice dispute resolution**.
 
@@ -30,7 +30,7 @@ You should see:
 [SEED] Inserted demo invoice INV-2026-89A.
 [CRON] Scheduled "* * * * *" — outstanding-dispute sweeper active.
 [HTTP] Listening on :3000
-[CRON ACTIVE] Outstanding Dispute Detected for Sharma Logistics (ID: INV-2026-89A)...
+[CRON ACTIVE] Outstanding Pending Detected for Sharma Logistics (ID: INV-2026-89A)...
 ```
 
 ### Quick API checks
