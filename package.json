@@ -2,7 +2,7 @@
   "name": "wai-dispute-resolver-backend",
   "version": "1.0.0",
   "description": "Bolna-driven invoice dispute resolution backend (Express + Mongoose + node-cron).",
-  "main": "server.js",
+  "main": "src/server.js",
   "type": "commonjs",
   "scripts": {
     "start": "node server.js",
