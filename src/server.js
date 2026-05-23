@@ -59,9 +59,14 @@ app.post('/api/bolna-webhook', async (req, res, next) => {
     
     const payload = req.body || {};
     
-    const invoiceId = (payload.invoice_id || payload.invoiceId || null);
-    const disputeReason = (payload.dispute_reason || payload.disputeReason || 'TDS_DEDUCTION');
-    const utrNumber = (payload.utr_number || payload.utrNumber || 'UNSPECIFIED');
+    const sanitize = (str) => {
+      if (!str) return null;
+      return str.toString().replace(/[{}]/g, '').trim();
+    };
+
+    const invoiceId = sanitize(payload.invoice_id || payload.invoiceId);
+    const disputeReason = sanitize(payload.dispute_reason || payload.disputeReason) || 'TDS_DEDUCTION';
+    const utrNumber = sanitize(payload.utr_number || payload.utrNumber) || 'UNSPECIFIED';
 
     if (!invoiceId) {
       console.warn('[BOLNA TOOL ERROR] Missing invoice_id parameter map. Falling back to primary row selection...');
@@ -82,7 +87,7 @@ app.post('/api/bolna-webhook', async (req, res, next) => {
     }
 
     const updatedDocument = await Invoice.findOneAndUpdate(
-      { invoiceId: invoiceId.trim() },
+      { invoiceId: invoiceId }, 
       {
         $set: {
           disputeReason: disputeReason,
@@ -94,7 +99,7 @@ app.post('/api/bolna-webhook', async (req, res, next) => {
       { new: true }
     );
 
-    console.log(`✅ [LEDGER UPDATED SUCCESSFULLY]: ID=${invoiceId} | Status=RESOLVED_COMPLIANCE | UTR=${utrNumber}`);
+    console.log(`✅ [LEDGER UPDATED CLEANLY]: ID=${invoiceId} | Status=RESOLVED_COMPLIANCE | UTR=${utrNumber}`);
 
     return res.status(200).json({
       status: "success",
