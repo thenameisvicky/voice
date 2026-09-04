@@ -1,0 +1,35 @@
+<html>
+  <head>
+    <title>Voice</title>
+  </head>
+  <body>
+    <button id="startMic">Start Mic</button>
+  </body>
+  <script>
+    const button = document.getElementById("startMic");
+    button.addEventListener("click", async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      console.log(`Media stream: ${JSON.stringify(stream)}`);
+      const tracks = stream.getAudioTracks();
+      console.log(`Audio track: ${JSON.stringify(tracks)}`);
+      console.log(
+        `Audio track settings: ${JSON.stringify(tracks[0].getSettings())}`,
+      );
+      console.log(`Audio track kind: ${tracks[0].kind}`);
+      console.log(`Audio track label: ${tracks[0].label}`);
+      console.log(`Audio track ready state: ${tracks[0].readyState}`);
+
+      const audioContext = new AudioContext();
+      console.log(`Audio context sampling rate: ${audioContext.sampleRate}`);
+
+      const mediaStream = audioContext.createMediaStreamSource(stream);
+      console.log(`Source: ${JSON.stringify(mediaStream)}`);
+
+      await audioContext.audioWorklet.addModule("audioWorklet.js");
+
+      const processor = new AudioWorkletNode(audioContext, "debug-audio");
+      mediaStream.connect(processor);
+      processor.connect(audioContext.destination);
+    });
+  </script>
+</html>

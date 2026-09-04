@@ -1,0 +1,5 @@
+class Synthesizer {
+    speak(text) {
+
+    }
+}
