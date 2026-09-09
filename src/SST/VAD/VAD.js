@@ -1,4 +1,0 @@
-class VAD {
-    process(frame) {
-    }
-}
