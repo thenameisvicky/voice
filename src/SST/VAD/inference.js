@@ -78,7 +78,7 @@ export class VADInference {
         this.previousContext = audioWithContext.slice(audioWithContext.length - 64);
 
         return {
-            probablity: speechProbability,
+            probability: speechProbability,
             frameSamples: audioFrame.length,
             sampleRate: this.sampleRate
         };

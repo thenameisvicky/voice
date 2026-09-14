@@ -53,9 +53,21 @@ wss.on("connection", async (ws) => {
     const voice = new Voice({
         audioFramer: framer,
         vad: vad,
-        endpointer: endpointer
+        endpointer: endpointer,
+        onEvent: (event) => {
+            if (ws.readyState !== ws.OPEN) {
+                return;
+            }
+            ws.send(
+                JSON.stringify({
+                    type: "voice_event",
+                    event: event.type,
+                    probability: event.probability
+                })
+            );
+        }
     });
-    
+
     ws.on("message", async (data, isBinary) => {
 
         if (!isBinary) return;
