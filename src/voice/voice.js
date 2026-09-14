@@ -1,7 +1,8 @@
 export class Voice {
-    constructor({ audioFramer, vad, transcriber, reasoner, synthesizer }) {
+    constructor({ audioFramer, vad, endpointer, transcriber, reasoner, synthesizer }) {
         this.audioFramer = audioFramer;
         this.vad = vad;
+        this.endpointer = endpointer;
         this.transcriber = transcriber;
         this.reasoner = reasoner;
         this.synthesizer = synthesizer;
@@ -18,8 +19,9 @@ export class Voice {
         const frames = this.audioFramer.process(pcmChunk);
 
         for (const frame of frames) {
-            const prob = await this.vad.process(frame);
-            console.log(`[VOICE] probability - ${prob.toFixed(3)}`);
+            const voiceActivity = await this.vad.process(frame);
+            const event = this.endpointer.process({ probability: voiceActivity["probablity"], frameSamples: voiceActivity["frameSamples"] });
+            console.log(`[VOICE][EVENT] - ${event?.type} | ${event?.timestampSamples}`);
         }
     }
 }

@@ -5,9 +5,10 @@ import { fileURLToPath } from "node:url";
 export class VADInference {
     constructor() {
         this.session = null;
-        this.initiated = false;
+        this.initialized = false;
         this.sampleRate = 16000;
         this.state = new Float32Array(2 * 1 * 128);
+        this.previousContext = new Float32Array(64);
     }
 
 
@@ -26,8 +27,6 @@ export class VADInference {
             }
         )
         console.log("[VAD] Model loaded");
-        console.log(`[VAD] Inputs: ${this.session.inputNames}`);
-        console.log(`[VAD] Outputs: ${this.session.outputNames}`);
         this.reset();
         this.initialized = true;
     }
@@ -45,10 +44,14 @@ export class VADInference {
     async process(audioFrame) {
         const normalizedAudioFrame = this.normalize(audioFrame);
 
+        const audioWithContext = new Float32Array(64 + 512);
+        audioWithContext.set(this.previousContext, 0);
+        audioWithContext.set(normalizedAudioFrame, 64);
+
         const inputTensor = new onxRT.Tensor(
             "float32",
-            normalizedAudioFrame,
-            [1, audioFrame.length]
+            audioWithContext,
+            [1, audioWithContext.length]
         );
 
         const stateTensor = new onxRT.Tensor(
@@ -72,11 +75,17 @@ export class VADInference {
         const speechProbability = output.output.data[0];
 
         this.state = new Float32Array(output.stateN.data);
+        this.previousContext = audioWithContext.slice(audioWithContext.length - 64);
 
-        return speechProbability;
+        return {
+            probablity: speechProbability,
+            frameSamples: audioFrame.length,
+            sampleRate: this.sampleRate
+        };
     }
 
     reset() {
         this.state = new Float32Array(2 * 1 * 128);
+        this.previousContext = new Float32Array(64);
     }
 }

@@ -5,6 +5,7 @@ import { WebSocketServer } from "ws";
 import { AudioFramer } from "./src/SST/VAD/framer.js";
 import { VADInference } from "./src/SST/VAD/inference.js";
 import { Voice } from "./src/voice/voice.js";
+import { Endpointer } from "./src/SST/VAD/endpointer.js";
 
 const server = http.createServer((req, res) => {
 
@@ -40,23 +41,24 @@ wss.on("connection", async (ws) => {
 
     const vad = new VADInference();
 
+    const endpointer = new Endpointer({
+        startThreshold: 0.5,
+        endThreshold: 0.3,
+        minSpeechDurationMs: 100,
+        minSilenceDurationMs: 300
+    });
+
     await vad.init();
 
     const voice = new Voice({
         audioFramer: framer,
-        vad: vad
+        vad: vad,
+        endpointer: endpointer
     });
-
+    
     ws.on("message", async (data, isBinary) => {
 
-        if (!isBinary) {
-            console.log(
-                "[WS] Text:",
-                data.toString()
-            );
-
-            return;
-        }
+        if (!isBinary) return;
 
         try {
 
