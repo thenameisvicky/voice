@@ -2,11 +2,8 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
     <title>Voice</title>
-
     <style>
       * {
         box-sizing: border-box;
@@ -14,26 +11,19 @@
 
       body {
         margin: 0;
-
         min-height: 100vh;
-
         background: radial-gradient(
           circle at center,
-          #111827 0%,
-          #080a0f 45%,
-          #050608 100%
+          #1a0505 0%,
+          #0a0202 45%,
+          #000000 100%
         );
-
         color: white;
-
         font-family:
           Inter,
           system-ui,
           -apple-system,
-          BlinkMacSystemFont,
-          "Segoe UI",
           sans-serif;
-
         display: flex;
         align-items: center;
         justify-content: center;
@@ -42,26 +32,18 @@
       .app {
         width: 100%;
         height: 100vh;
-
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-
         position: relative;
       }
 
-      /* ----------------------------- */
-      /* Header                         */
-      /* ----------------------------- */
-
       .header {
         position: absolute;
-
         top: 28px;
         left: 32px;
         right: 32px;
-
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -70,38 +52,29 @@
       .logo {
         font-size: 18px;
         font-weight: 600;
-
         letter-spacing: -0.02em;
+        color: #ffffff;
       }
 
       .connection {
         display: flex;
         align-items: center;
         gap: 8px;
-
         color: #8b93a7;
-
         font-size: 13px;
       }
 
       .connection-dot {
         width: 7px;
         height: 7px;
-
         border-radius: 50%;
-
         background: #555;
       }
 
       .connection-dot.connected {
-        background: #4ade80;
-
-        box-shadow: 0 0 10px rgba(74, 222, 128, 0.7);
+        background: #dc2626;
+        box-shadow: 0 0 10px rgba(220, 38, 38, 0.7);
       }
-
-      /* ----------------------------- */
-      /* Center                         */
-      /* ----------------------------- */
 
       .center {
         display: flex;
@@ -109,113 +82,69 @@
         align-items: center;
       }
 
-      /* ----------------------------- */
-      /* Orb                            */
-      /* ----------------------------- */
-
       .orb-container {
         width: 260px;
         height: 260px;
-
         display: flex;
         align-items: center;
         justify-content: center;
-
         position: relative;
       }
 
       .orb-ring {
         position: absolute;
-
         width: 220px;
         height: 220px;
-
         border-radius: 50%;
-
-        border: 1px solid rgba(100, 120, 255, 0.12);
-
+        border: 1px solid rgba(220, 38, 38, 0.15);
         transition:
           transform 180ms ease,
           border-color 300ms ease;
       }
 
+      .orb-wrapper {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: transform 100ms ease-out;
+      }
+
       .orb {
         width: 170px;
         height: 170px;
-
-        border-radius: 50%;
-
         background: radial-gradient(
           circle at 30% 25%,
-          #4cc9ff,
-          #3154ff 45%,
-          #6c35d9 75%,
-          #17102c 100%
+          #ff4d4d,
+          #dc2626 45%,
+          #991b1b 75%,
+          #450a0a 100%
         );
 
-        box-shadow:
-          0 0 35px rgba(69, 90, 255, 0.25),
-          inset -20px -20px 40px rgba(0, 0, 0, 0.25);
-
-        position: relative;
-
-        transform: scale(1);
-
-        transition:
-          transform 100ms ease-out,
-          box-shadow 200ms ease;
+        animation: liquidRotate 8s linear infinite;
+        transition: 300ms ease;
       }
 
-      /*
-         * Subtle moving light inside the orb
-         */
-
-      .orb::before {
-        content: "";
-
-        position: absolute;
-
-        width: 100%;
-        height: 100%;
-
-        border-radius: 50%;
-
-        background: linear-gradient(
-          120deg,
-          transparent 25%,
-          rgba(255, 255, 255, 0.14) 45%,
-          transparent 65%
-        );
-
-        animation: orbLight 4s linear infinite;
-
-        opacity: 0.6;
-      }
-
-      @keyframes orbLight {
+      @keyframes liquidRotate {
         0% {
-          transform: translateX(-70%);
+          transform: rotate(0deg);
+          border-radius: 45% 55% 40% 60% / 55% 45% 60% 40%;
         }
-
+        50% {
+          border-radius: 60% 40% 55% 45% / 40% 60% 45% 55%;
+        }
         100% {
-          transform: translateX(70%);
+          transform: rotate(360deg);
+          border-radius: 45% 55% 40% 60% / 55% 45% 60% 40%;
         }
       }
 
-      /* ----------------------------- */
-      /* Speaking state                 */
-      /* ----------------------------- */
-
+      /* Speeds up rotation seamlessly when speaking */
       .orb-container.speaking .orb {
-        box-shadow:
-          0 0 45px rgba(69, 90, 255, 0.5),
-          0 0 90px rgba(120, 60, 255, 0.2),
-          inset -20px -20px 40px rgba(0, 0, 0, 0.2);
+        animation: liquidRotate 2.5s linear infinite;
       }
 
       .orb-container.speaking .orb-ring {
-        border-color: rgba(100, 130, 255, 0.35);
-
+        border-color: rgba(220, 38, 38, 0.4);
         animation: ringPulse 1.5s ease-in-out infinite;
       }
 
@@ -225,66 +154,47 @@
           transform: scale(1);
           opacity: 0.5;
         }
-
         50% {
           transform: scale(1.08);
           opacity: 1;
         }
       }
 
-      /* ----------------------------- */
-      /* Status                         */
-      /* ----------------------------- */
-
       .status {
         margin-top: 12px;
-
         font-size: 20px;
-
         font-weight: 500;
-
         letter-spacing: -0.02em;
+        color: #ffffff;
       }
 
       .subtitle {
         margin-top: 8px;
-
         font-size: 14px;
-
         color: #6f778a;
       }
 
-      /* ----------------------------- */
-      /* Mic button                     */
-      /* ----------------------------- */
-
       .mic-button {
         margin-top: 36px;
-
         width: 56px;
         height: 56px;
-
         border: 1px solid rgba(255, 255, 255, 0.1);
-
         border-radius: 50%;
-
         background: rgba(255, 255, 255, 0.05);
-
         color: white;
-
         cursor: pointer;
-
         display: flex;
         align-items: center;
         justify-content: center;
-
         transition:
           background 200ms ease,
-          transform 150ms ease;
+          transform 150ms ease,
+          200ms ease;
       }
 
       .mic-button:hover {
         background: rgba(255, 255, 255, 0.09);
+        box-shadow: 0 0 15px rgba(220, 38, 38, 0.2);
       }
 
       .mic-button:active {
@@ -292,7 +202,8 @@
       }
 
       .mic-button.active {
-        background: rgba(80, 100, 255, 0.2);
+        background: rgba(220, 38, 38, 0.2);
+        border-color: rgba(220, 38, 38, 0.5);
       }
 
       .mic-icon {
@@ -300,49 +211,34 @@
         height: 20px;
       }
 
-      /* ----------------------------- */
-      /* Debug info                     */
-      /* ----------------------------- */
-
       .debug {
         position: absolute;
-
         bottom: 25px;
-
         font-size: 11px;
-
         color: #3f4655;
-
         font-family: monospace;
       }
     </style>
   </head>
-
   <body>
     <div class="app">
-      <!-- Header -->
-
       <div class="header">
         <div class="logo">Voice</div>
-
         <div class="connection">
           <div id="connectionDot" class="connection-dot"></div>
-
-          <span id="connectionText"> Disconnected </span>
+          <span id="connectionText">Disconnected</span>
         </div>
       </div>
-
-      <!-- Main -->
 
       <div class="center">
         <div id="orbContainer" class="orb-container">
           <div class="orb-ring"></div>
-
-          <div id="orb" class="orb"></div>
+          <div id="orbWrapper" class="orb-wrapper">
+            <div id="orb" class="orb"></div>
+          </div>
         </div>
 
         <div id="status" class="status">Not listening</div>
-
         <div id="subtitle" class="subtitle">Press the microphone to start</div>
 
         <button id="micButton" class="mic-button">
@@ -356,34 +252,23 @@
             stroke-linejoin="round"
           >
             <rect x="9" y="2" width="6" height="12" rx="3" />
-
             <path d="M5 10a7 7 0 0 0 14 0" />
-
             <line x1="12" y1="19" x2="12" y2="22" />
-
             <line x1="8" y1="22" x2="16" y2="22" />
           </svg>
         </button>
       </div>
-
       <div id="debug" class="debug">probability: 0.000</div>
     </div>
 
     <script>
       const micButton = document.getElementById("micButton");
-
       const orbContainer = document.getElementById("orbContainer");
-
-      const orb = document.getElementById("orb");
-
+      const orbWrapper = document.getElementById("orbWrapper"); // Target the wrapper
       const status = document.getElementById("status");
-
       const subtitle = document.getElementById("subtitle");
-
       const debug = document.getElementById("debug");
-
       const connectionDot = document.getElementById("connectionDot");
-
       const connectionText = document.getElementById("connectionText");
 
       let socket = null;
@@ -403,64 +288,38 @@
           });
 
           audioContext = new AudioContext();
-
-          console.log("AudioContext sample rate:", audioContext.sampleRate);
-
           socket = new WebSocket("ws://localhost:3007");
-
           socket.binaryType = "arraybuffer";
 
           socket.onopen = async () => {
-            console.log("WebSocket connected");
-
             connectionDot.classList.add("connected");
-
             connectionText.textContent = "Connected";
-
             await audioContext.audioWorklet.addModule("./audioProcessor.js");
 
             const source = audioContext.createMediaStreamSource(stream);
-
             processor = new AudioWorkletNode(audioContext, "audio-processor");
 
             processor.port.onmessage = (event) => {
               const pcm16Buffer = event.data;
-
-              if (socket.readyState !== WebSocket.OPEN) {
-                return;
-              }
-
+              if (socket.readyState !== WebSocket.OPEN) return;
               socket.send(pcm16Buffer);
             };
 
             source.connect(processor);
-
             micButton.classList.add("active");
-
             status.textContent = "Listening";
-
             subtitle.textContent = "Speak into your microphone";
           };
 
           socket.onmessage = (event) => {
             const message = JSON.parse(event.data);
-
-            if (message.type !== "voice_event") {
-              return;
-            }
-
+            if (message.type !== "voice_event") return;
             updateVoiceUI(message.event, message.probability);
           };
 
-          socket.onerror = (error) => {
-            console.error("WebSocket error:", error);
-          };
-
+          socket.onerror = (error) => console.error("WebSocket error:", error);
           socket.onclose = () => {
-            console.log("WebSocket closed");
-
             connectionDot.classList.remove("connected");
-
             connectionText.textContent = "Disconnected";
           };
         } catch (error) {
@@ -470,52 +329,39 @@
 
       function updateVoiceUI(event, probability) {
         debug.textContent = `probability: ${probability.toFixed(3)}`;
-
         const minProbability = 0.3;
 
         const intensity = Math.max(
           0,
           Math.min(1, (probability - minProbability) / (1 - minProbability)),
         );
+        const scale = 1 + intensity * 0.15;
 
-        const scale = 1 + intensity * 0.12;
-
-        orb.style.transform = `scale(${scale})`;
+        // Apply scaling to the wrapper so it doesn't break the CSS rotation
+        orbWrapper.style.transform = `scale(${scale})`;
 
         if (event === "START") {
           setSpeaking(true);
-
-          return;
-        }
-
-        if (event === "END") {
+        } else if (event === "END") {
           setSpeaking(false);
-
-          orb.style.transform = "scale(1)";
+          orbWrapper.style.transform = "scale(1)";
         }
       }
 
       function setSpeaking(speaking) {
         if (speaking) {
           orbContainer.classList.add("speaking");
-
           status.textContent = "Speaking";
-
           subtitle.textContent = "I'm listening...";
         } else {
           orbContainer.classList.remove("speaking");
-
           status.textContent = "Listening";
-
           subtitle.textContent = "Speak into your microphone";
         }
       }
 
       micButton.addEventListener("click", async () => {
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          return;
-        }
-
+        if (socket && socket.readyState === WebSocket.OPEN) return;
         await startVoice();
       });
     </script>
