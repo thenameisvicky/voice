@@ -8,6 +8,7 @@ import { Voice } from "./src/voice/voice.js";
 import { Endpointer } from "./src/SST/VAD/endpointer.js";
 import { SST_CONFIG } from "./src/SST/config.js";
 import { UtteranceBuffer } from "./src/SST/utterance/utteranceBuffer.js";
+import { Transcriber } from "./src/SST/transcriber/transcriber.js";
 
 const server = http.createServer((req, res) => {
 
@@ -47,6 +48,8 @@ wss.on("connection", async (ws) => {
 
     const utteranceBuffer = new UtteranceBuffer();
 
+    const transcriber = new Transcriber({ url: "http://127.0.0.1:8080/inference" });
+
     await vad.init();
 
     const voice = new Voice({
@@ -61,11 +64,13 @@ wss.on("connection", async (ws) => {
                 JSON.stringify({
                     type: "voice_event",
                     event: event.type,
-                    probability: event.probability
+                    probability: event.probability,
+                    text: event.text
                 })
             );
         },
-        utteranceBuffer: utteranceBuffer
+        utteranceBuffer: utteranceBuffer,
+        transcriber: transcriber
     });
 
     ws.on("message", async (data, isBinary) => {

@@ -18,6 +18,7 @@
   "homepage": "https://github.com/thenameisvicky/voice#readme",
   "description": "",
   "dependencies": {
+    "form-data": "^4.0.6",
     "onnxruntime-node": "^1.29.0",
     "ws": "^8.21.3"
   }

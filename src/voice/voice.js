@@ -24,20 +24,18 @@ export class Voice {
             const voiceActivity = await this.vad.process(frame);
             const event = this.endpointer.process({ probability: voiceActivity["probability"], frameSamples: voiceActivity["frameSamples"] });
 
-            this.onEvent?.({
-                type: event?.type,
-                probability: voiceActivity.probability
-            });
-
             const speechChunk = this.utteranceBuffer.process({ event: event, frame: frame });
 
             if (speechChunk) {
-                const durationMs =
-                    speechChunk.length / 16000 * 1000;
+                const transcript = await this.transcriber.transcribe(speechChunk);
 
-                console.log(
-                    `[VOICE][SPEECH] - ${speechChunk.length} samples (${durationMs.toFixed(0)}ms)`
-                );
+                console.log(`[VOICE][TRANSCRIPTION] - ${transcript}`);
+
+                this.onEvent?.({
+                    type: "transcript",
+                    probability: voiceActivity.probability,
+                    text: transcript
+                });
             }
         }
     }

@@ -258,7 +258,7 @@
           </svg>
         </button>
       </div>
-      <div id="debug" class="debug">probability: 0.000</div>
+      <!-- <div id="debug" class="debug">probability: 0.000</div> -->
     </div>
 
     <script>
@@ -314,7 +314,7 @@
           socket.onmessage = (event) => {
             const message = JSON.parse(event.data);
             if (message.type !== "voice_event") return;
-            updateVoiceUI(message.event, message.probability);
+            updateVoiceUI(message.event, message.probability, message.text);
           };
 
           socket.onerror = (error) => console.error("WebSocket error:", error);
@@ -327,8 +327,8 @@
         }
       }
 
-      function updateVoiceUI(event, probability) {
-        debug.textContent = `probability: ${probability.toFixed(3)}`;
+      function updateVoiceUI(event, probability, text) {
+        // debug.textContent = `probability: ${probability.toFixed(3)}`;
         const minProbability = 0.3;
 
         const intensity = Math.max(
@@ -337,27 +337,21 @@
         );
         const scale = 1 + intensity * 0.15;
 
-        // Apply scaling to the wrapper so it doesn't break the CSS rotation
         orbWrapper.style.transform = `scale(${scale})`;
 
-        if (event === "START") {
-          setSpeaking(true);
-        } else if (event === "END") {
-          setSpeaking(false);
-          orbWrapper.style.transform = "scale(1)";
+        if (event === "transcript") {
+          setTranscript(text);
         }
       }
 
-      function setSpeaking(speaking) {
-        if (speaking) {
+      function setTranscript(text) {
+        if (text.trim() !== "") {
           orbContainer.classList.add("speaking");
-          status.textContent = "Speaking";
+          status.textContent = text;
           subtitle.textContent = "I'm listening...";
-        } else {
-          orbContainer.classList.remove("speaking");
-          status.textContent = "Listening";
-          subtitle.textContent = "Speak into your microphone";
         }
+        orbContainer.classList.remove("speaking");
+        subtitle.textContent = "Speak into your microphone";
       }
 
       micButton.addEventListener("click", async () => {
