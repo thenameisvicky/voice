@@ -6,6 +6,8 @@ import { AudioFramer } from "./src/SST/VAD/framer.js";
 import { VADInference } from "./src/SST/VAD/inference.js";
 import { Voice } from "./src/voice/voice.js";
 import { Endpointer } from "./src/SST/VAD/endpointer.js";
+import { SST_CONFIG } from "./src/SST/config.js";
+import { UtteranceBuffer } from "./src/SST/utterance/utteranceBuffer.js";
 
 const server = http.createServer((req, res) => {
 
@@ -41,12 +43,9 @@ wss.on("connection", async (ws) => {
 
     const vad = new VADInference();
 
-    const endpointer = new Endpointer({
-        startThreshold: 0.5,
-        endThreshold: 0.3,
-        minSpeechDurationMs: 100,
-        minSilenceDurationMs: 300
-    });
+    const endpointer = new Endpointer(SST_CONFIG);
+
+    const utteranceBuffer = new UtteranceBuffer();
 
     await vad.init();
 
@@ -65,7 +64,8 @@ wss.on("connection", async (ws) => {
                     probability: event.probability
                 })
             );
-        }
+        },
+        utteranceBuffer: utteranceBuffer
     });
 
     ws.on("message", async (data, isBinary) => {
