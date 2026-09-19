@@ -328,16 +328,18 @@
       }
 
       function updateVoiceUI(event, probability, text) {
-        // debug.textContent = `probability: ${probability.toFixed(3)}`;
         const minProbability = 0.3;
 
         const intensity = Math.max(
           0,
           Math.min(1, (probability - minProbability) / (1 - minProbability)),
         );
-        const scale = 1 + intensity * 0.15;
 
+        const scale = 1 + intensity * 0.15;
         orbWrapper.style.transform = `scale(${scale})`;
+
+        const morphSpeed = 8 - intensity * 6.5;
+        orb.style.animationDuration = `${morphSpeed}s`;
 
         if (event === "transcript") {
           setTranscript(text);
