@@ -1,3 +1,0 @@
-class Reasoner {
-    process(transcript) { }
-}

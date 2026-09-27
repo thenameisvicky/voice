@@ -9,6 +9,10 @@ import { Endpointer } from "./src/SST/VAD/endpointer.js";
 import { SST_CONFIG } from "./src/SST/config.js";
 import { UtteranceBuffer } from "./src/SST/utterance/utteranceBuffer.js";
 import { Transcriber } from "./src/SST/transcriber/transcriber.js";
+import { Reasoner } from "./src/LLM/reasoner/reasoner.js";
+import { Model } from "./src/LLM/model/model.js";
+import { Runtime } from "./src/LLM/runtime/runtime.js";
+import { LLM_CONFIG } from "./src/LLM/config.js";
 
 const server = http.createServer((req, res) => {
 
@@ -52,6 +56,17 @@ wss.on("connection", async (ws) => {
 
     await vad.init();
 
+    const runtime = new Runtime({
+        url: LLM_CONFIG.url,
+        model: LLM_CONFIG.model,
+        temperature: LLM_CONFIG.temperature,
+        maxTokens: LLM_CONFIG.maxTokens
+    })
+
+    const model = new Model({ runtime });
+
+    const reasoner = new Reasoner({ model, systemPrompt: LLM_CONFIG.systemPrompt });
+
     const voice = new Voice({
         audioFramer: framer,
         vad: vad,
@@ -70,7 +85,8 @@ wss.on("connection", async (ws) => {
             );
         },
         utteranceBuffer: utteranceBuffer,
-        transcriber: transcriber
+        transcriber: transcriber,
+        reasoner: reasoner
     });
 
     ws.on("message", async (data, isBinary) => {

@@ -28,13 +28,15 @@ export class Voice {
 
             if (speechChunk) {
                 const transcript = await this.transcriber.transcribe(speechChunk);
+                console.log(`[VOICE][TRANSCRIPTION][HUMAN] - ${transcript}`);
 
-                console.log(`[VOICE][TRANSCRIPTION] - ${transcript}`);
+                const response = await this.reasoner.reason(transcript);
+                console.log(`[VOICE][TRANSCRIPTION][AGENT] - ${response}`);
 
                 this.onEvent?.({
                     type: "transcript",
                     probability: voiceActivity.probability,
-                    text: transcript
+                    text: response
                 });
             }
         }
