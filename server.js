@@ -13,6 +13,7 @@ import { Reasoner } from "./src/LLM/reasoner/reasoner.js";
 import { Model } from "./src/LLM/model/model.js";
 import { Runtime } from "./src/LLM/runtime/runtime.js";
 import { LLM_CONFIG } from "./src/LLM/config.js";
+import { StreamingTranscriber } from "./src/SST/transcriber/streamingTranscriber.js";
 
 const server = http.createServer((req, res) => {
 
@@ -54,6 +55,8 @@ wss.on("connection", async (ws) => {
 
     const transcriber = new Transcriber({ url: "http://127.0.0.1:8080/inference" });
 
+    const streamingTranscriber = new StreamingTranscriber(transcriber);
+
     await vad.init();
 
     const runtime = new Runtime({
@@ -86,7 +89,8 @@ wss.on("connection", async (ws) => {
         },
         utteranceBuffer: utteranceBuffer,
         transcriber: transcriber,
-        reasoner: reasoner
+        reasoner: reasoner,
+        streamingTranscriber: streamingTranscriber
     });
 
     ws.on("message", async (data, isBinary) => {
@@ -96,6 +100,7 @@ wss.on("connection", async (ws) => {
         try {
 
             await voice.voice(data);
+            // await voice.streamingVoice(data);
 
         } catch (error) {
 

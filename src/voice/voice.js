@@ -1,5 +1,5 @@
 export class Voice {
-    constructor({ audioFramer, vad, endpointer, transcriber, reasoner, synthesizer, onEvent, utteranceBuffer }) {
+    constructor({ audioFramer, vad, endpointer, transcriber, reasoner, synthesizer, onEvent, utteranceBuffer, streamingTranscriber }) {
         this.audioFramer = audioFramer;
         this.vad = vad;
         this.endpointer = endpointer;
@@ -8,6 +8,7 @@ export class Voice {
         this.synthesizer = synthesizer;
         this.onEvent = onEvent;
         this.utteranceBuffer = utteranceBuffer;
+        this.streamingTranscriber = streamingTranscriber
     }
 
     async voice(audioChunk) {
@@ -28,15 +29,52 @@ export class Voice {
 
             if (speechChunk) {
                 const transcript = await this.transcriber.transcribe(speechChunk);
-                console.log(`[VOICE][TRANSCRIPTION][HUMAN] - ${transcript}`);
-
                 const response = await this.reasoner.reason(transcript);
-                console.log(`[VOICE][TRANSCRIPTION][AGENT] - ${response}`);
-
                 this.onEvent?.({
                     type: "transcript",
                     probability: voiceActivity.probability,
                     text: response
+                });
+            }
+        }
+    }
+
+    async streamingVoice(audioChunk) {
+        const pcmChunk = new Int16Array(
+            audioChunk.buffer,
+            audioChunk.byteOffset,
+            audioChunk.byteLength / 2
+        );
+
+        const frames = this.audioFramer.process(pcmChunk);
+
+        for (const frame of frames) {
+            const voiceActivity = await this.vad.process(frame);
+            const event = this.endpointer.process({ probability: voiceActivity["probability"], frameSamples: voiceActivity["frameSamples"] });
+            console.log(`[STREAMING][VOICE][EVENTS] - ${event?.type}`);
+
+            if (event?.type == "START") {
+                this.streamingTranscriber.start();
+            }
+
+            if (event?.type == "END") {
+                const full = await this.streamingTranscriber.finalize(frame);
+                if (full) {
+                    this.onEvent?.({
+                        type: "transcript",
+                        probability: voiceActivity.probability,
+                        text: full
+                    });
+                }
+                continue;
+            }
+
+            const partial = await this.streamingTranscriber.pushAudio(frame)
+            if (partial) {
+                this.onEvent?.({
+                    type: "transcript",
+                    probability: voiceActivity.probability,
+                    text: partial
                 });
             }
         }

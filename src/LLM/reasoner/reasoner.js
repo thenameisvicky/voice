@@ -27,7 +27,7 @@ export class Reasoner {
             role: "assistant",
             content: response
         });
-        
+        console.log(`[REASONER][LLM] - ${response}`);
         return response;
     }
 }

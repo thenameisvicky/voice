@@ -1,4 +1,3 @@
-import fs from "node:fs";
 export class Transcriber {
     constructor({ url }) {
         this.url = url;
@@ -9,7 +8,7 @@ export class Transcriber {
             speech.length / 16000 * 1000;
 
         console.log(
-            `[VOICE][TRANSCRIBER] - ${speech.length} samples (${(durationMs / 1000).toFixed(2)}s)`
+            `[TRANSCRIBER] - ${speech.length} samples (${(durationMs / 1000).toFixed(2)}s)`
         );
 
         const wavBuffer = this.createWav(speech);
@@ -33,7 +32,7 @@ export class Transcriber {
             const errorText = await response.text();
 
             console.error(
-                "[VOICE][TRANSCRIBER] Whisper response:",
+                "[TRANSCRIBER][TRANSCRIPTION][HUMAN] Whisper response:",
                 response.status,
                 errorText
             );
@@ -44,7 +43,7 @@ export class Transcriber {
         }
 
         const result = await response.json();
-
+        console.log(`[TRANSCRIBER][TRANSCRIPTION][HUMAN] - ${result.text}`);
         return result.text?.trim() ?? "";
     }
 
