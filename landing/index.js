@@ -143,87 +143,67 @@ if (reducedMotion) {
 
 // ---------- Probability waveform ----------
 
-// Scrolling bar waveform whose height follows the VAD speech probability.
-class ProbabilityWave {
-  constructor(canvas, { barWidth = 3, gap = 3, speed = 70 } = {}) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext("2d");
-    this.step = barWidth + gap;
-    this.barWidth = barWidth;
-    this.speed = speed;
+// Bars whose heights morph with the VAD speech probability.
+class ProbabilityBars {
+  constructor(container, { count = 10, rest, active }) {
+    this.container = container;
+    this.rest = rest;
+    this.active = active;
     this.target = 0;
     this.level = 0;
-    this.phase = 0;
-    this.shift = 0;
-    this.bars = [];
+    this.time = 0;
     this.last = 0;
+    this.bars = Array.from({ length: count }, (_, i) => {
+      const el = document.createElement("span");
+      container.append(el);
+      // Bell-shaped profile: centre bars reach higher than the edges.
+      const c = (i - (count - 1) / 2) / ((count - 1) / 2);
+      return {
+        el,
+        shape: 0.4 + 0.6 * Math.cos((c * Math.PI) / 2),
+        // Neighbouring bars share a phase offset so motion flows across the row.
+        phase: i * 0.55 + Math.random() * 0.6,
+      };
+    });
     this.resize();
     window.addEventListener("resize", () => this.resize());
   }
 
   resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const rect = this.canvas.getBoundingClientRect();
-    this.width = rect.width;
-    this.height = rect.height;
-    this.canvas.width = rect.width * dpr;
-    this.canvas.height = rect.height * dpr;
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const count = Math.ceil(this.width / this.step) + 2;
-    while (this.bars.length < count) this.bars.unshift(this.makeBar());
-    this.bars.splice(0, Math.max(0, this.bars.length - count));
+    this.height = this.container.clientHeight;
+    this.minHeight = this.bars[0].el.clientWidth || 5;
   }
 
   setProbability(p) {
     this.target = Math.max(0, Math.min(1, p));
   }
 
-  makeBar() {
-    // Fast attack, slower release — like the endpointer's hysteresis.
-    const k = this.target > this.level ? 0.45 : 0.14;
-    this.level += (this.target - this.level) * k;
-    this.phase += 0.55 + Math.random() * 0.35;
-    const syllable = 0.35 + 0.65 * Math.abs(Math.sin(this.phase)) * (0.7 + Math.random() * 0.3);
-    const idle = Math.random() * 0.03;
-    return { amp: Math.max(idle, this.level * syllable), p: this.level };
-  }
-
   frame(now) {
     const dt = this.last ? Math.min(0.05, (now - this.last) / 1000) : 0;
     this.last = now;
-    this.shift += dt * this.speed;
-    while (this.shift >= this.step) {
-      this.shift -= this.step;
-      this.bars.shift();
-      this.bars.push(this.makeBar());
-    }
+    // Fast attack, slower release, like the endpointer's hysteresis.
+    const rate = this.target > this.level ? 14 : 5;
+    this.level += (this.target - this.level) * (1 - Math.exp(-dt * rate));
+    // Motion speeds up as the model grows more confident there is speech.
+    this.time += dt * (0.5 + this.level * 1.8);
     this.draw();
   }
 
   draw() {
-    const { ctx, width, height } = this;
-    const mid = height / 2;
-    const maxH = height / 2 - 4;
-    ctx.clearRect(0, 0, width, height);
-
-    ctx.fillStyle = "rgba(15, 15, 20, 0.08)";
-    ctx.fillRect(0, mid - 0.5, width, 1);
-
-    const n = this.bars.length;
-    for (let i = 0; i < n; i++) {
-      const bar = this.bars[i];
-      const x = i * this.step - this.shift;
-      const h = Math.max(1.5, bar.amp * maxH);
-      // Grey when silent, accent red as probability rises; fade older bars.
-      const r = Math.round(196 + (200 - 196) * bar.p);
-      const g = Math.round(190 + (65 - 190) * bar.p);
-      const b = Math.round(190 + (65 - 190) * bar.p);
-      const edge = Math.min(1, x / (width * 0.3));
-      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.25 + 0.75 * Math.max(0, edge)})`;
-      ctx.beginPath();
-      ctx.roundRect(x, mid - h, this.barWidth, h * 2, this.barWidth / 2);
-      ctx.fill();
-    }
+    const { rest, active, level } = this;
+    const color = rest.map((v, i) => Math.round(v + (active[i] - v) * level)).join(", ");
+    this.bars.forEach((bar) => {
+      // Two travelling waves in opposite directions keep the shape organic.
+      const wobble =
+        0.5 +
+        0.3 * Math.sin(this.time * 6 + bar.phase) +
+        0.2 * Math.sin(this.time * 9.5 - bar.phase * 1.3);
+      const breathe = 0.04 * (1 + Math.sin(this.time * 2 + bar.phase));
+      const energy = Math.min(1, level * bar.shape * wobble + breathe);
+      const h = this.minHeight + (this.height - this.minHeight) * energy;
+      bar.el.style.height = `${h.toFixed(1)}px`;
+      bar.el.style.background = `rgb(${color})`;
+    });
   }
 }
 
@@ -233,7 +213,11 @@ const vad = document.getElementById("vad");
 const vadValue = document.getElementById("vadValue");
 const demoText = document.getElementById("demoText");
 const demoState = document.getElementById("demoState");
-const wave = new ProbabilityWave(document.getElementById("vadWave"));
+const wave = new ProbabilityBars(document.getElementById("vadBars"), {
+  count: 24,
+  rest: [214, 208, 208],
+  active: [200, 65, 65],
+});
 
 const lines = [
   "What's on my calendar this afternoon?",
@@ -312,12 +296,8 @@ async function runDemo() {
 }
 
 if (reducedMotion) {
-  // Static snapshot: a short burst of speech in the middle of the trace.
-  wave.bars = wave.bars.map((_, i, all) => {
-    const t = i / all.length;
-    wave.setProbability(t > 0.35 && t < 0.8 ? 0.9 : 0.04);
-    return wave.makeBar();
-  });
+  // Static snapshot of the bars mid-speech.
+  wave.level = 0.92;
   wave.draw();
   vadValue.textContent = "0.92";
   demoText.textContent = lines[0];

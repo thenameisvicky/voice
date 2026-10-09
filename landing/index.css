@@ -273,10 +273,19 @@ h1 {
   width: min(100%, 440px);
 }
 
-.vad canvas {
-  display: block;
-  width: 100%;
+.bars {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   height: 200px;
+}
+
+.bars span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgb(214, 208, 208);
 }
 
 .vad-meta {
@@ -706,8 +715,12 @@ h3 {
   .hero {
     padding-top: 24px;
   }
-  .vad canvas {
+  .bars {
     height: 150px;
+    gap: 4px;
+  }
+  .bars span {
+    width: 4px;
   }
   .pipeline,
   .features {
