@@ -1,4 +1,4 @@
-export class Transcriber {
+export class BatchTranscriber {
     constructor({ url }) {
         this.url = url;
     }
@@ -32,7 +32,7 @@ export class Transcriber {
             const errorText = await response.text();
 
             console.error(
-                "[TRANSCRIBER][TRANSCRIPTION][HUMAN] Whisper response:",
+                "[TRANSCRIBER][TRANSCRIPTION][HUMAN] response:",
                 response.status,
                 errorText
             );

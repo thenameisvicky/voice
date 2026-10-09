@@ -1,14 +1,14 @@
 export class Voice {
-    constructor({ audioFramer, vad, endpointer, transcriber, reasoner, synthesizer, onEvent, utteranceBuffer, streamingTranscriber }) {
+    constructor({ audioFramer, vad, endpointer, batchTranscriber, reasoner, synthesizer, onEvent, utteranceBuffer, streamTranscriber }) {
         this.audioFramer = audioFramer;
         this.vad = vad;
         this.endpointer = endpointer;
-        this.transcriber = transcriber;
+        this.batchTranscriber = batchTranscriber;
         this.reasoner = reasoner;
         this.synthesizer = synthesizer;
         this.onEvent = onEvent;
         this.utteranceBuffer = utteranceBuffer;
-        this.streamingTranscriber = streamingTranscriber
+        this.streamTranscriber = streamTranscriber
     }
 
     async voice(audioChunk) {
@@ -28,7 +28,7 @@ export class Voice {
             const speechChunk = this.utteranceBuffer.process({ event: event, frame: frame });
 
             if (speechChunk) {
-                const transcript = await this.transcriber.transcribe(speechChunk);
+                const transcript = await this.batchTranscriber.transcribe(speechChunk);
                 const response = await this.reasoner.reason(transcript);
                 this.onEvent?.({
                     type: "transcript",
@@ -54,11 +54,11 @@ export class Voice {
             console.log(`[STREAMING][VOICE][EVENTS] - ${event?.type}`);
 
             if (event?.type == "START") {
-                this.streamingTranscriber.start();
+                this.streamTranscriber.start();
             }
 
             if (event?.type == "END") {
-                const full = await this.streamingTranscriber.finalize(frame);
+                const full = await this.streamTranscriber.finalize(frame);
                 if (full) {
                     this.onEvent?.({
                         type: "transcript",
@@ -69,7 +69,7 @@ export class Voice {
                 continue;
             }
 
-            const partial = await this.streamingTranscriber.pushAudio(frame)
+            const partial = await this.streamTranscriber.pushAudio(frame)
             if (partial) {
                 this.onEvent?.({
                     type: "transcript",

@@ -1,6 +1,6 @@
-export class StreamingTranscriber {
+export class StreamTranscriber {
     constructor(transcriberInstance) {
-        this.transcriber = transcriberInstance;
+        this.batchTranscriber = transcriberInstance;
         this.startTranscribe = false;
         this.audioState = {
             audioBuffer: [],
@@ -34,14 +34,14 @@ export class StreamingTranscriber {
     }
 
     async decode() {
-        const partialTranscript = await this.transcriber.transcribe(this.audioState.audioBuffer.slice(this.audioState.decodeWindowStart, this.audioState.decodeWindowStart + this.audioState.windowSize));
+        const partialTranscript = await this.batchTranscriber.transcribe(this.audioState.audioBuffer.slice(this.audioState.decodeWindowStart, this.audioState.decodeWindowStart + this.audioState.windowSize));
         this.audioState.decodeWindowStart += this.audioState.step;
         this.transcriptionState.partialHypothesis = partialTranscript;
         return this.transcriptionState.partialHypothesis;
     }
 
     async finalize() {
-        this.transcriptionState.finalTranscript = await this.transcriber.transcribe(this.audioState.fullAudio);
+        this.transcriptionState.finalTranscript = await this.batchTranscriber.transcribe(this.audioState.fullAudio);
         this.audioState.fullAudio = [];
         this.audioState.audioBuffer = [];
         this.startTranscribe = false;

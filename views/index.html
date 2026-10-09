@@ -288,7 +288,7 @@
           });
 
           audioContext = new AudioContext();
-          socket = new WebSocket("ws://localhost:3007");
+          socket = new WebSocket("ws://localhost:3000");
           socket.binaryType = "arraybuffer";
 
           socket.onopen = async () => {
