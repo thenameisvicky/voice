@@ -8,12 +8,12 @@ import { Voice } from "./src/voice/voice.js";
 import { Endpointer } from "./src/SST/VAD/endpointer.js";
 import { SST_CONFIG } from "./src/SST/config.js";
 import { UtteranceBuffer } from "./src/SST/utterance/utteranceBuffer.js";
-import { Transcriber } from "./src/SST/transcriber/transcriber.js";
+import { Transcriber } from "./src/SST/transcriber/batch.js";
 import { Reasoner } from "./src/LLM/reasoner/reasoner.js";
 import { Model } from "./src/LLM/model/model.js";
 import { Runtime } from "./src/LLM/runtime/runtime.js";
 import { LLM_CONFIG } from "./src/LLM/config.js";
-import { StreamingTranscriber } from "./src/SST/transcriber/streamingTranscriber.js";
+import { StreamingTranscriber } from "./src/SST/transcriber/stream.js";
 
 const server = http.createServer((req, res) => {
 
@@ -53,7 +53,7 @@ wss.on("connection", async (ws) => {
 
     const utteranceBuffer = new UtteranceBuffer();
 
-    const transcriber = new Transcriber({ url: "http://127.0.0.1:8080/inference" });
+    const transcriber = new Transcriber({ url: "http://127.0.0.1:8080/v1/audio/transcriptions" });
 
     const streamingTranscriber = new StreamingTranscriber(transcriber);
 
