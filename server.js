@@ -99,7 +99,7 @@ wss.on("connection", async (ws) => {
 
         try {
 
-            await voice.streamingVoice(data);
+            await voice.voice(data);
 
         } catch (error) {
 
