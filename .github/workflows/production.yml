@@ -1,0 +1,83 @@
+name: Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      email:
+        description: "Enter deployment email"
+        required: true
+        type: string
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Verify email from input
+        id: verify-email
+        env:
+          INPUT_EMAIL: ${{ github.event.inputs.email }}
+          AUTHORIZED_EMAIL: ${{ secrets.DEPLOYMENT_EMAIL }}
+        run: |
+          if [ -z "$AUTHORIZED_EMAIL" ]; then
+            echo "DEPLOYMENT_EMAIL secret is not set in repository secrets."
+            exit 1
+          fi
+
+          if [ "$INPUT_EMAIL" = "$AUTHORIZED_EMAIL" ]; then
+            echo "Email verification passed"
+            echo "verified=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Email verification failed. Input email does not match authorized email."
+            exit 1
+          fi
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Setup GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./landing
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Deployment summary
+        run: |
+          echo "## Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Branch**: ${{ github.ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployed by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deployment URL**: ${{ steps.deployment.outputs.page_url }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

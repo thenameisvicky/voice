@@ -82,82 +82,30 @@
         align-items: center;
       }
 
-      .orb-container {
-        width: 260px;
-        height: 260px;
+      .wave {
+        width: min(420px, calc(100vw - 48px));
+      }
+
+      .wave canvas {
+        display: block;
+        width: 100%;
+        height: 180px;
+      }
+
+      .wave-meta {
         display: flex;
-        align-items: center;
-        justify-content: center;
-        position: relative;
+        justify-content: space-between;
+        margin-top: 8px;
+        font-family: monospace;
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: #4b5263;
       }
 
-      .orb-ring {
-        position: absolute;
-        width: 220px;
-        height: 220px;
-        border-radius: 50%;
-        border: 1px solid rgba(220, 38, 38, 0.15);
-        transition:
-          transform 180ms ease,
-          border-color 300ms ease;
-      }
-
-      .orb-wrapper {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: transform 100ms ease-out;
-      }
-
-      .orb {
-        width: 170px;
-        height: 170px;
-        background: radial-gradient(
-          circle at 30% 25%,
-          #ff4d4d,
-          #dc2626 45%,
-          #991b1b 75%,
-          #450a0a 100%
-        );
-
-        animation: liquidRotate 8s linear infinite;
-        transition: 300ms ease;
-      }
-
-      @keyframes liquidRotate {
-        0% {
-          transform: rotate(0deg);
-          border-radius: 45% 55% 40% 60% / 55% 45% 60% 40%;
-        }
-        50% {
-          border-radius: 60% 40% 55% 45% / 40% 60% 45% 55%;
-        }
-        100% {
-          transform: rotate(360deg);
-          border-radius: 45% 55% 40% 60% / 55% 45% 60% 40%;
-        }
-      }
-
-      /* Speeds up rotation seamlessly when speaking */
-      .orb-container.speaking .orb {
-        animation: liquidRotate 2.5s linear infinite;
-      }
-
-      .orb-container.speaking .orb-ring {
-        border-color: rgba(220, 38, 38, 0.4);
-        animation: ringPulse 1.5s ease-in-out infinite;
-      }
-
-      @keyframes ringPulse {
-        0%,
-        100% {
-          transform: scale(1);
-          opacity: 0.5;
-        }
-        50% {
-          transform: scale(1.08);
-          opacity: 1;
-        }
+      .wave-value {
+        color: #c4c9d4;
+        font-variant-numeric: tabular-nums;
       }
 
       .status {
@@ -231,10 +179,11 @@
       </div>
 
       <div class="center">
-        <div id="orbContainer" class="orb-container">
-          <div class="orb-ring"></div>
-          <div id="orbWrapper" class="orb-wrapper">
-            <div id="orb" class="orb"></div>
+        <div class="wave">
+          <canvas id="waveCanvas"></canvas>
+          <div class="wave-meta">
+            <span>Speech probability</span>
+            <span id="probabilityValue" class="wave-value">0.00</span>
           </div>
         </div>
 
@@ -263,8 +212,7 @@
 
     <script>
       const micButton = document.getElementById("micButton");
-      const orbContainer = document.getElementById("orbContainer");
-      const orbWrapper = document.getElementById("orbWrapper"); // Target the wrapper
+      const probabilityValue = document.getElementById("probabilityValue");
       const status = document.getElementById("status");
       const subtitle = document.getElementById("subtitle");
       const debug = document.getElementById("debug");
@@ -321,25 +269,111 @@
           socket.onclose = () => {
             connectionDot.classList.remove("connected");
             connectionText.textContent = "Disconnected";
+            wave.setProbability(0);
           };
         } catch (error) {
           console.error("Failed to start voice:", error);
         }
       }
 
+      class ProbabilityWave {
+        constructor(canvas, { barWidth = 3, gap = 3, speed = 70 } = {}) {
+          this.canvas = canvas;
+          this.ctx = canvas.getContext("2d");
+          this.step = barWidth + gap;
+          this.barWidth = barWidth;
+          this.speed = speed;
+          this.target = 0;
+          this.level = 0;
+          this.phase = 0;
+          this.shift = 0;
+          this.bars = [];
+          this.last = 0;
+          this.resize();
+          window.addEventListener("resize", () => this.resize());
+        }
+
+        resize() {
+          const dpr = Math.min(window.devicePixelRatio || 1, 2);
+          const rect = this.canvas.getBoundingClientRect();
+          this.width = rect.width;
+          this.height = rect.height;
+          this.canvas.width = rect.width * dpr;
+          this.canvas.height = rect.height * dpr;
+          this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          const count = Math.ceil(this.width / this.step) + 2;
+          while (this.bars.length < count) this.bars.unshift(this.makeBar());
+          this.bars.splice(0, Math.max(0, this.bars.length - count));
+        }
+
+        setProbability(p) {
+          this.target = Math.max(0, Math.min(1, p));
+        }
+
+        makeBar() {
+          const k = this.target > this.level ? 0.45 : 0.14;
+          this.level += (this.target - this.level) * k;
+          this.phase += 0.55 + Math.random() * 0.35;
+          const syllable =
+            0.35 + 0.65 * Math.abs(Math.sin(this.phase)) * (0.7 + Math.random() * 0.3);
+          const idle = Math.random() * 0.03;
+          return { amp: Math.max(idle, this.level * syllable), p: this.level };
+        }
+
+        frame(now) {
+          const dt = this.last ? Math.min(0.05, (now - this.last) / 1000) : 0;
+          this.last = now;
+          this.shift += dt * this.speed;
+          while (this.shift >= this.step) {
+            this.shift -= this.step;
+            this.bars.shift();
+            this.bars.push(this.makeBar());
+          }
+          this.draw();
+        }
+
+        draw() {
+          const { ctx, width, height } = this;
+          const mid = height / 2;
+          const maxH = height / 2 - 4;
+          ctx.clearRect(0, 0, width, height);
+
+          ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
+          ctx.fillRect(0, mid - 0.5, width, 1);
+
+          for (let i = 0; i < this.bars.length; i++) {
+            const bar = this.bars[i];
+            const x = i * this.step - this.shift;
+            const h = Math.max(1.5, bar.amp * maxH);
+            // Grey when silent, red as probability rises; fade older bars.
+            const r = Math.round(70 + (220 - 70) * bar.p);
+            const g = Math.round(74 + (38 - 74) * bar.p);
+            const b = Math.round(86 + (38 - 86) * bar.p);
+            const edge = Math.max(0, Math.min(1, x / (width * 0.3)));
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${0.25 + 0.75 * edge})`;
+            ctx.beginPath();
+            ctx.roundRect(x, mid - h, this.barWidth, h * 2, this.barWidth / 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      const wave = new ProbabilityWave(document.getElementById("waveCanvas"));
+      let shownProbability = 0;
+
+      function renderWave(now) {
+        wave.frame(now);
+        shownProbability += (wave.level - shownProbability) * 0.2;
+        probabilityValue.textContent = shownProbability.toFixed(2);
+        requestAnimationFrame(renderWave);
+      }
+
+      requestAnimationFrame(renderWave);
+
       function updateVoiceUI(event, probability, text) {
-        const minProbability = 0.3;
-
-        const intensity = Math.max(
-          0,
-          Math.min(1, (probability - minProbability) / (1 - minProbability)),
-        );
-
-        const scale = 1 + intensity * 0.15;
-        orbWrapper.style.transform = `scale(${scale})`;
-
-        const morphSpeed = 8 - intensity * 6.5;
-        orb.style.animationDuration = `${morphSpeed}s`;
+        if (typeof probability === "number") {
+          wave.setProbability(probability);
+        }
 
         if (event === "transcript") {
           setTranscript(text);
@@ -348,11 +382,8 @@
 
       function setTranscript(text) {
         if (text.trim() !== "") {
-          orbContainer.classList.add("speaking");
           status.textContent = text;
-          subtitle.textContent = "I'm listening...";
         }
-        orbContainer.classList.remove("speaking");
         subtitle.textContent = "Speak into your microphone";
       }
 

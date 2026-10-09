@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tokenly</title>
+    <meta
+      name="description"
+      content="Tokenly is a real-time voice AI pipeline — voice activity detection, streaming speech recognition and a local LLM, wired end to end."
+    />
+    <meta name="theme-color" content="#fafaf9" />
+    <meta property="og:title" content="Tokenly — Real-time voice AI" />
+    <meta
+      property="og:description"
+      content="Listen, transcribe, think — in real time, on your own hardware."
+    />
+    <meta property="og:url" content="https://tokenly.in/" />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3CradialGradient id='g' cx='.3' cy='.25' r='.85'%3E%3Cstop offset='0' stop-color='%23e17575'/%3E%3Cstop offset='.45' stop-color='%23c84141'/%3E%3Cstop offset='.75' stop-color='%23853232'/%3E%3Cstop offset='1' stop-color='%233d1a1a'/%3E%3C/radialGradient%3E%3C/defs%3E%3Cpath fill='url(%23g)' d='M32 4c14 0 28 10 28 27S47 60 31 60 4 49 4 33 18 4 32 4z'/%3E%3C/svg%3E" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="index.css" />
+    <script>
+      document.documentElement.classList.add("js");
+    </script>
+  </head>
+  <body>
+    <div class="backdrop" aria-hidden="true">
+      <canvas id="waves"></canvas>
+      <div class="grid"></div>
+    </div>
+
+    <header class="nav">
+      <a class="logo" href="#top" aria-label="Tokenly home">
+        <span class="logo-mark"></span>
+        Tokenly
+      </a>
+      <nav class="nav-links">
+        <a href="#pipeline">Pipeline</a>
+        <a href="#features">Features</a>
+        <a href="#stack">Stack</a>
+      </nav>
+      <div class="nav-actions">
+        <a class="btn btn-small nav-github" href="https://github.com/thenameisvicky/voice" target="_blank" rel="noopener">GitHub</a>
+        <button id="menuToggle" class="icon-btn menu-btn" aria-label="Open menu" aria-expanded="false" aria-controls="mobileMenu">
+          <span class="menu-lines"><span></span><span></span></span>
+        </button>
+      </div>
+    </header>
+
+    <nav id="mobileMenu" class="mobile-menu" aria-label="Mobile">
+      <a href="#pipeline">Pipeline</a>
+      <a href="#features">Features</a>
+      <a href="#stack">Stack</a>
+      <a href="https://github.com/thenameisvicky/voice" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+
+    <main id="top">
+      <section class="hero">
+        <div class="hero-copy">
+          <span class="pill load-in" style="--d: 0ms"><span class="pill-dot"></span> Real-time voice pipeline</span>
+          <h1 class="load-in" style="--d: 100ms">Voice AI that <span class="accent">listens</span> as fast as you speak.</h1>
+          <p class="lead load-in" style="--d: 200ms">
+            Tokenly turns a raw microphone stream into understanding — voice activity
+            detection, streaming speech recognition and a local language model,
+            wired end to end over a single WebSocket.
+          </p>
+          <div class="hero-cta load-in" style="--d: 300ms">
+            <a class="btn btn-primary" href="#pipeline">See how it works</a>
+            <a class="btn btn-ghost" href="https://github.com/thenameisvicky/voice" target="_blank" rel="noopener">
+              View source
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7M8 7h9v9"/></svg>
+            </a>
+          </div>
+        </div>
+
+        <div class="hero-visual load-in" style="--d: 450ms">
+          <div class="vad" id="vad">
+            <canvas id="vadWave" role="img" aria-label="Waveform driven by simulated speech probability"></canvas>
+            <div class="vad-meta">
+              <span>Speech probability</span>
+              <span id="vadValue" class="vad-value">0.00</span>
+            </div>
+          </div>
+          <div class="transcript-card">
+            <div class="transcript-head">
+              <span class="live-dot"></span>
+              <span id="demoState">Listening</span>
+            </div>
+            <p id="demoText" class="transcript-text"></p>
+          </div>
+        </div>
+      </section>
+
+      <section class="specs reveal" aria-label="Pipeline parameters">
+        <div class="spec"><span class="spec-value">16 kHz</span><span class="spec-label">PCM16 mono capture</span></div>
+        <div class="spec"><span class="spec-value">32 ms</span><span class="spec-label">VAD frame size</span></div>
+        <div class="spec"><span class="spec-value">200 ms</span><span class="spec-label">Pre-speech buffer</span></div>
+        <div class="spec"><span class="spec-value">300 ms</span><span class="spec-label">Silence to endpoint</span></div>
+      </section>
+
+      <section id="pipeline" class="section">
+        <div class="section-head reveal">
+          <span class="eyebrow">Pipeline</span>
+          <h2>From waveform to answer, one stage at a time.</h2>
+          <p>Every stage is small, observable and swappable.</p>
+        </div>
+
+        <ol class="pipeline">
+          <li class="stage reveal">
+            <span class="stage-num">01</span>
+            <h3>Capture</h3>
+            <p>An AudioWorklet resamples the mic to 16 kHz PCM16 and streams it over WebSocket.</p>
+          </li>
+          <li class="stage reveal">
+            <span class="stage-num">02</span>
+            <h3>Detect</h3>
+            <p>Silero VAD scores every 32 ms frame; the endpointer decides when speech starts and ends.</p>
+          </li>
+          <li class="stage reveal">
+            <span class="stage-num">03</span>
+            <h3>Transcribe</h3>
+            <p>Streaming NeMo ASR emits partial text live, with Whisper.cpp for batch utterances.</p>
+          </li>
+          <li class="stage reveal">
+            <span class="stage-num">04</span>
+            <h3>Reason</h3>
+            <p>A compact LLM served by llama.cpp turns the transcript into a concise, speakable reply.</p>
+          </li>
+          <li class="stage reveal">
+            <span class="stage-num">05</span>
+            <h3>Speak <em class="soon">soon</em></h3>
+            <p>Speech synthesis closes the loop for a fully spoken conversation.</p>
+          </li>
+        </ol>
+      </section>
+
+      <section id="features" class="section">
+        <div class="section-head reveal">
+          <span class="eyebrow">Why Tokenly</span>
+          <h2>Built for conversations, not file uploads.</h2>
+        </div>
+
+        <div class="features">
+          <article class="feature reveal">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h3l3-8 4 16 3-8h7"/></svg>
+            </div>
+            <h3>Streaming first</h3>
+            <p>Audio flows in continuously and text comes back as you speak — no record-then-upload round trip.</p>
+          </article>
+          <article class="feature reveal">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>
+            </div>
+            <h3>Runs on your hardware</h3>
+            <p>Native whisper.cpp, NeMo and llama.cpp servers on CPU. Your audio never has to leave the machine.</p>
+          </article>
+          <article class="feature reveal">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            </div>
+            <h3>Smart endpointing</h3>
+            <p>Hysteresis thresholds, minimum speech and silence windows keep turns crisp without clipping words.</p>
+          </article>
+          <article class="feature reveal">
+            <div class="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+            </div>
+            <h3>Modular by design</h3>
+            <p>Framer, VAD, endpointer, buffer, transcriber and reasoner are independent modules you can swap.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="stack" class="section">
+        <div class="section-head reveal">
+          <span class="eyebrow">Stack</span>
+          <h2>Open models. Native runtimes.</h2>
+        </div>
+        <ul class="stack reveal">
+          <li>Node.js</li>
+          <li>WebSocket</li>
+          <li>AudioWorklet</li>
+          <li>Silero VAD</li>
+          <li>ONNX Runtime</li>
+          <li>NVIDIA NeMo</li>
+          <li>whisper.cpp</li>
+          <li>llama.cpp</li>
+          <li>Qwen3</li>
+        </ul>
+      </section>
+
+      <section class="cta reveal">
+        <h2>Start talking to your machine.</h2>
+        <p>Clone the repo, start the servers, press the mic.</p>
+        <a class="btn btn-primary" href="https://github.com/thenameisvicky/voice" target="_blank" rel="noopener">Get the code</a>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>© <span id="year"></span> Tokenly</span>
+      <span class="footer-mono">tokenly.in</span>
+    </footer>
+
+    <script src="index.js" defer></script>
+  </body>
+</html>

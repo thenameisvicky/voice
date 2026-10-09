@@ -23,6 +23,7 @@ export class Voice {
 
         for (const frame of frames) {
             const voiceActivity = await this.vad.process(frame);
+            this.onEvent?.({ type: "vad", probability: voiceActivity.probability });
             const event = this.endpointer.process({ probability: voiceActivity["probability"], frameSamples: voiceActivity["frameSamples"] });
 
             const speechChunk = this.utteranceBuffer.process({ event: event, frame: frame });
@@ -50,6 +51,7 @@ export class Voice {
 
         for (const frame of frames) {
             const voiceActivity = await this.vad.process(frame);
+            this.onEvent?.({ type: "vad", probability: voiceActivity.probability });
             const event = this.endpointer.process({ probability: voiceActivity["probability"], frameSamples: voiceActivity["frameSamples"] });
             console.log(`[STREAMING][VOICE][EVENTS] - ${event?.type}`);
 
