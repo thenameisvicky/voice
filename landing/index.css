@@ -1,3 +1,9 @@
+/* ==========================================================================
+   Tokenly base — identical on tokenly.in, Kural and fast-CV.
+   Change it in one page, copy it to the others. Page styles go below
+   the "Page" banner at the end of this file.
+   ========================================================================== */
+
 * {
   box-sizing: border-box;
 }
@@ -48,14 +54,11 @@ a {
   pointer-events: none;
 }
 
-#waves {
+#bg {
   position: absolute;
-  left: 0;
-  right: 0;
-  top: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
-  opacity: 0.8;
 }
 
 .grid {
@@ -93,14 +96,18 @@ a {
   letter-spacing: -0.02em;
 }
 
+/* The Tokenly wallet logo, shared by every product. */
 .logo-mark {
-  width: 22px;
-  height: 22px;
-  background: radial-gradient(circle at 30% 25%, #e17575, #c84141 45%, #853232 75%, #3d1a1a 100%);
-  border-radius: 45% 55% 40% 60% / 55% 45% 60% 40%;
-  animation:
-    spin 8s linear infinite,
-    morph 4s ease-in-out infinite alternate;
+  width: 28px;
+  height: 23px;
+  flex-shrink: 0;
+  background: url("logo.png") center / contain no-repeat;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .nav-links {
@@ -205,19 +212,6 @@ main {
   padding: 48px 0 32px;
 }
 
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  font-size: 13px;
-  color: var(--muted);
-}
-
-.pill-dot,
 .live-dot {
   width: 7px;
   height: 7px;
@@ -233,7 +227,7 @@ main {
 }
 
 h1 {
-  margin: 20px 0 0;
+  margin: 0;
   font-size: clamp(40px, 6vw, 68px);
   line-height: 1.02;
   letter-spacing: -0.045em;
@@ -266,68 +260,24 @@ h1 {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 28px;
+  gap: 16px;
 }
 
-.vad {
+/* ---------- Status card ---------- */
+
+.status-card {
   width: min(100%, 440px);
-}
-
-.bars {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  height: 200px;
-}
-
-.bars span {
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: rgb(214, 208, 208);
-}
-
-.vad-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 10px;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-
-.vad-value {
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-/* The logo mark keeps the liquid motion. */
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-@keyframes morph {
-  0% { border-radius: 45% 55% 40% 60% / 55% 45% 60% 40%; }
-  50% { border-radius: 58% 42% 52% 48% / 44% 56% 46% 54%; }
-  100% { border-radius: 60% 40% 55% 45% / 40% 60% 45% 55%; }
-}
-
-.transcript-card {
-  width: min(100%, 380px);
-  padding: 16px 18px;
+  padding: 14px 18px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--surface);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   box-shadow: var(--shadow);
+  text-align: left;
 }
 
-.transcript-head {
+.status-head {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -336,23 +286,6 @@ h1 {
   color: var(--faint);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-}
-
-.transcript-text {
-  margin: 10px 0 0;
-  min-height: 48px;
-  font-size: 16px;
-  line-height: 1.5;
-  transition:
-    opacity 450ms ease,
-    transform 450ms cubic-bezier(0.2, 0.7, 0.2, 1),
-    filter 450ms ease;
-}
-
-.transcript-text.fading {
-  opacity: 0;
-  transform: translateY(-6px);
-  filter: blur(4px);
 }
 
 .word {
@@ -371,26 +304,6 @@ h1 {
 
 #demoState.fading {
   opacity: 0;
-}
-
-.transcript-card {
-  text-align: left;
-  transition: box-shadow 700ms ease, border-color 700ms ease;
-}
-
-.vad.speaking + .transcript-card {
-  border-color: rgba(200, 65, 65, 0.25);
-}
-
-.transcript-text::after {
-  content: "";
-  display: inline-block;
-  width: 2px;
-  height: 1.05em;
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  background: var(--accent);
-  animation: blink 1s steps(2) infinite;
 }
 
 /* ---------- Specs strip ---------- */
@@ -538,19 +451,25 @@ h3 {
   color: var(--muted);
 }
 
-.soon {
-  font-style: normal;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+.tag {
+  display: inline-block;
   padding: 2px 6px;
   margin-left: 4px;
   border-radius: 6px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  vertical-align: middle;
   background: var(--accent-soft);
   color: var(--accent);
-  vertical-align: middle;
+}
+
+.tag-live {
+  background: rgba(34, 139, 84, 0.1);
+  color: #1f7a4a;
 }
 
 /* Features */
@@ -643,13 +562,50 @@ h3 {
 
 .footer {
   display: flex;
-  justify-content: space-between;
-  gap: 16px;
+  flex-direction: column;
+  gap: 20px;
   max-width: 1160px;
   margin: 0 auto;
-  padding: 48px 32px 40px;
+  padding: 64px 32px 40px;
   font-size: 13px;
   color: var(--faint);
+}
+
+.footer-top,
+.footer-bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.footer-top .logo {
+  font-size: 15px;
+  color: var(--text);
+}
+
+.footer-top .logo-mark {
+  width: 20px;
+  height: 16px;
+}
+
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.footer-links a:hover,
+.footer-links a[aria-current] {
+  color: var(--text);
+}
+
+.footer-bottom {
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
 }
 
 .footer-mono {
@@ -714,13 +670,6 @@ h3 {
   }
   .hero {
     padding-top: 24px;
-  }
-  .bars {
-    height: 150px;
-    gap: 4px;
-  }
-  .bars span {
-    width: 4px;
   }
   .pipeline,
   .features {
@@ -905,5 +854,99 @@ h3 {
     opacity: 1;
     transform: none;
     filter: none;
+  }
+}
+
+/* ==========================================================================
+   Page
+   ========================================================================== */
+
+/* ---------- Waveform background ---------- */
+
+#bg {
+  opacity: 0.8;
+}
+
+/* ---------- Voice demo ---------- */
+
+.hero-visual {
+  gap: 28px;
+}
+
+.vad {
+  width: min(100%, 440px);
+}
+
+.bars {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 200px;
+}
+
+.bars span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgb(214, 208, 208);
+}
+
+.vad-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.vad-value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.transcript-text {
+  margin: 10px 0 0;
+  min-height: 48px;
+  font-size: 16px;
+  line-height: 1.5;
+  transition:
+    opacity 450ms ease,
+    transform 450ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    filter 450ms ease;
+}
+
+.transcript-text.fading {
+  opacity: 0;
+  transform: translateY(-6px);
+  filter: blur(4px);
+}
+
+.vad.speaking + .status-card {
+  border-color: rgba(200, 65, 65, 0.25);
+}
+
+.transcript-text::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--accent);
+  animation: blink 1s steps(2) infinite;
+}
+
+@media (max-width: 640px) {
+  .bars {
+    height: 150px;
+    gap: 4px;
+  }
+  .bars span {
+    width: 4px;
   }
 }

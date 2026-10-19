@@ -1,3 +1,9 @@
+// ==========================================================================
+// Tokenly base — identical on tokenly.in, Kural and fast-CV.
+// Change it in one page, copy it to the others. Page code goes below the
+// "Page" banner at the end of this file.
+// ==========================================================================
+
 const root = document.documentElement;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
@@ -63,22 +69,52 @@ if ("IntersectionObserver" in window && !reducedMotion) {
   revealed.forEach((el) => el.classList.add("visible"));
 }
 
-// ---------- Animated waveform background ----------
+// ---------- Animated backdrop ----------
 
-const canvas = document.getElementById("waves");
-const ctx = canvas.getContext("2d");
-let width = 0;
-let height = 0;
-let dpr = 1;
+// Sizes the full-viewport #bg canvas and runs the page's draw(view, now) every
+// frame, pausing while the tab is hidden. Reduced motion draws one still frame.
+function startBackdrop({ draw, resize = () => {} }) {
+  const canvas = document.getElementById("bg");
+  const view = { ctx: canvas.getContext("2d"), width: 0, height: 0 };
 
-function resize() {
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
-  width = window.innerWidth;
-  height = window.innerHeight;
-  canvas.width = width * dpr;
-  canvas.height = height * dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  function fit() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    view.width = window.innerWidth;
+    view.height = window.innerHeight;
+    canvas.width = view.width * dpr;
+    canvas.height = view.height * dpr;
+    view.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    resize(view);
+  }
+
+  fit();
+  window.addEventListener("resize", () => {
+    fit();
+    if (reducedMotion) draw(view, 0);
+  });
+
+  if (reducedMotion) {
+    draw(view, 0);
+    return;
+  }
+
+  let rafId = 0;
+  const frame = (now) => {
+    draw(view, now);
+    rafId = requestAnimationFrame(frame);
+  };
+  rafId = requestAnimationFrame(frame);
+  document.addEventListener("visibilitychange", () => {
+    cancelAnimationFrame(rafId);
+    if (!document.hidden) rafId = requestAnimationFrame(frame);
+  });
 }
+
+// ==========================================================================
+// Page
+// ==========================================================================
+
+// ---------- Animated waveform background ----------
 
 const WAVE_RGB = "200, 65, 65";
 
@@ -91,55 +127,31 @@ const waves = [
   { amp: 18, freq: 0.01, speed: -0.6, alpha: 0.06, y: 0.8, width: 1.75, phase: 2.7 },
 ];
 
-function drawWaves(t) {
-  ctx.clearRect(0, 0, width, height);
-  // Speech-like envelope: bursts of energy that rise and fall over time.
-  const envelope = 0.55 + 0.45 * Math.sin(t * 0.0007) * Math.sin(t * 0.0013);
+startBackdrop({
+  draw({ ctx, width, height }, t) {
+    ctx.clearRect(0, 0, width, height);
+    // Speech-like envelope: bursts of energy that rise and fall over time.
+    const envelope = 0.55 + 0.45 * Math.sin(t * 0.0007) * Math.sin(t * 0.0013);
 
-  waves.forEach((w) => {
-    ctx.beginPath();
-    const baseY = height * w.y;
-    for (let x = 0; x <= width; x += 6) {
-      const taper = Math.sin((x / width) * Math.PI);
-      const y =
-        baseY +
-        Math.sin(x * w.freq + t * 0.001 * w.speed + w.phase) *
-          w.amp *
-          envelope *
-          taper +
-        Math.sin(x * w.freq * 2.3 + t * 0.0017 * w.speed) * w.amp * 0.3 * taper;
-      if (x === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
-    ctx.strokeStyle = `rgba(${WAVE_RGB}, ${w.alpha})`;
-    ctx.lineWidth = w.width;
-    ctx.lineCap = "round";
-    ctx.stroke();
-  });
-}
-
-let rafId = null;
-
-function loop(t) {
-  drawWaves(t);
-  rafId = requestAnimationFrame(loop);
-}
-
-resize();
-window.addEventListener("resize", resize);
-
-if (reducedMotion) {
-  drawWaves(0);
-} else {
-  rafId = requestAnimationFrame(loop);
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      cancelAnimationFrame(rafId);
-    } else {
-      rafId = requestAnimationFrame(loop);
-    }
-  });
-}
+    waves.forEach((w) => {
+      ctx.beginPath();
+      const baseY = height * w.y;
+      for (let x = 0; x <= width; x += 6) {
+        const taper = Math.sin((x / width) * Math.PI);
+        const y =
+          baseY +
+          Math.sin(x * w.freq + t * 0.001 * w.speed + w.phase) * w.amp * envelope * taper +
+          Math.sin(x * w.freq * 2.3 + t * 0.0017 * w.speed) * w.amp * 0.3 * taper;
+        if (x === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = `rgba(${WAVE_RGB}, ${w.alpha})`;
+      ctx.lineWidth = w.width;
+      ctx.lineCap = "round";
+      ctx.stroke();
+    });
+  },
+});
 
 // ---------- Probability waveform ----------
 
