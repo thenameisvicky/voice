@@ -233,6 +233,7 @@
       let stream = null;
       let processor = null;
       let playbackTime = 0;
+      let pendingReplies = [];
 
       async function startVoice() {
         try {
@@ -379,9 +380,14 @@
           wave.setProbability(probability);
         }
 
-        // Arrives together with the reply audio, after ASR + LLM + TTS.
+        // transcript → response → audio all arrive together, after ASR + LLM + TTS.
         if (event === "transcript" && text?.trim()) {
-          status.textContent = text;
+          subtitle.textContent = `You: ${text}`;
+        }
+
+        // Held until its audio starts, so the text appears as the agent speaks.
+        if (event === "response" && text?.trim()) {
+          pendingReplies.push(text);
         }
       }
 
@@ -393,10 +399,14 @@
           source.buffer = buffer;
           source.connect(audioContext.destination);
 
+          const reply = pendingReplies.shift();
           const startAt = Math.max(audioContext.currentTime, playbackTime);
           source.start(startAt);
           playbackTime = startAt + buffer.duration;
-          subtitle.textContent = "Speaking…";
+
+          setTimeout(() => {
+            if (reply) status.textContent = reply;
+          }, (startAt - audioContext.currentTime) * 1000);
 
           source.onended = () => {
             if (audioContext.currentTime >= playbackTime) {

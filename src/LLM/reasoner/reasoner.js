@@ -1,10 +1,12 @@
 export class Reasoner {
     constructor({
         model,
-        systemPrompt
+        systemPrompt,
+        maxHistoryMessages = 6
     }) {
         this.model = model;
         this.systemPrompt = systemPrompt;
+        this.maxHistoryMessages = maxHistoryMessages;
         this.messages = [];
     }
 
@@ -18,11 +20,16 @@ export class Reasoner {
                 role: "system",
                 content: this.systemPrompt
             },
-            ...this.messages
+            ...this.messages.slice(-this.maxHistoryMessages)
         ];
 
+        // Emojis are read out (or garbled) by TTS; strip them before they
+        // reach speech or history.
         const response =
-            await this.model.generate(messages);
+            (await this.model.generate(messages))
+                .replace(/\p{Extended_Pictographic}|️/gu, "")
+                .replace(/\s{2,}/g, " ")
+                .trim();
         this.messages.push({
             role: "assistant",
             content: response

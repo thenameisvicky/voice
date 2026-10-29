@@ -69,12 +69,18 @@ wss.on("connection", async (ws) => {
         url: LLM_CONFIG.url,
         model: LLM_CONFIG.model,
         temperature: LLM_CONFIG.temperature,
-        maxTokens: LLM_CONFIG.maxTokens
+        maxTokens: LLM_CONFIG.maxTokens,
+        frequencyPenalty: LLM_CONFIG.frequencyPenalty,
+        presencePenalty: LLM_CONFIG.presencePenalty
     })
 
     const model = new Model({ runtime });
 
-    const reasoner = new Reasoner({ model, systemPrompt: LLM_CONFIG.systemPrompt });
+    const reasoner = new Reasoner({
+        model,
+        systemPrompt: LLM_CONFIG.systemPrompt,
+        maxHistoryMessages: LLM_CONFIG.maxHistoryMessages
+    });
 
     const voice = new Voice({
         audioFramer: framer,

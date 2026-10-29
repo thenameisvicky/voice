@@ -32,7 +32,13 @@ export class Voice {
             if (speechChunk) {
                 const transcript = await this.batchTranscriber.transcribe(speechChunk);
                 if (!transcript?.trim()) continue;
-                
+
+                this.onEvent?.({
+                    type: "transcript",
+                    probability: voiceActivity.probability,
+                    text: transcript,
+                });
+
                 const response = await this.reasoner.reason(transcript);
                 if (typeof response !== "string" || !response.trim()) {
                     continue;
@@ -43,9 +49,8 @@ export class Voice {
                 });
 
                 this.onEvent?.({
-                    type: "transcript",
-                    probability: voiceActivity.probability,
-                    text: transcript,
+                    type: "response",
+                    text: response,
                 });
 
                 this.onAudio?.(result.audioBuffer);

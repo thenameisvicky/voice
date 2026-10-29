@@ -3,12 +3,16 @@ export class Runtime {
         url,
         model,
         temperature = 0.7,
-        maxTokens = 128
+        maxTokens = 128,
+        frequencyPenalty = 0,
+        presencePenalty = 0
     }) {
         this.url = url;
         this.model = model;
         this.temperature = temperature;
         this.maxTokens = maxTokens;
+        this.frequencyPenalty = frequencyPenalty;
+        this.presencePenalty = presencePenalty;
     }
 
     async generate(messages, options = {}) {
@@ -26,6 +30,8 @@ export class Runtime {
                 max_tokens:
                     options.maxTokens ??
                     this.maxTokens,
+                frequency_penalty: this.frequencyPenalty,
+                presence_penalty: this.presencePenalty,
                 stream: false,
                 chat_template_kwargs: {
                     enable_thinking: false
