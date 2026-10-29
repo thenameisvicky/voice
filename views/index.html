@@ -232,13 +232,14 @@
       let audioContext = null;
       let stream = null;
       let processor = null;
+      let playbackTime = 0;
 
       async function startVoice() {
         try {
           stream = await navigator.mediaDevices.getUserMedia({
             audio: {
               channelCount: 1,
-              echoCancellation: false,
+              echoCancellation: true,
               noiseSuppression: false,
               autoGainControl: false,
             },
@@ -259,6 +260,9 @@
             processor.port.onmessage = (event) => {
               const pcm16Buffer = event.data;
               if (socket.readyState !== WebSocket.OPEN) return;
+              // Half-duplex: drop mic audio while a reply plays (+300 ms tail)
+              // so the assistant doesn't transcribe its own voice.
+              if (audioContext.currentTime < playbackTime + 0.3) return;
               socket.send(pcm16Buffer);
             };
 
@@ -269,6 +273,11 @@
           };
 
           socket.onmessage = (event) => {
+            if (event.data instanceof ArrayBuffer) {
+              playAudio(event.data);
+              return;
+            }
+
             const message = JSON.parse(event.data);
             if (message.type !== "voice_event") return;
             updateVoiceUI(message.event, message.probability, message.text);
@@ -370,16 +379,33 @@
           wave.setProbability(probability);
         }
 
-        if (event === "transcript") {
-          setTranscript(text);
+        // Arrives together with the reply audio, after ASR + LLM + TTS.
+        if (event === "transcript" && text?.trim()) {
+          status.textContent = text;
         }
       }
 
-      function setTranscript(text) {
-        if (text.trim() !== "") {
-          status.textContent = text;
+      // Server sends one WAV per reply; queue so replies never overlap.
+      async function playAudio(arrayBuffer) {
+        try {
+          const buffer = await audioContext.decodeAudioData(arrayBuffer);
+          const source = audioContext.createBufferSource();
+          source.buffer = buffer;
+          source.connect(audioContext.destination);
+
+          const startAt = Math.max(audioContext.currentTime, playbackTime);
+          source.start(startAt);
+          playbackTime = startAt + buffer.duration;
+          subtitle.textContent = "Speaking…";
+
+          source.onended = () => {
+            if (audioContext.currentTime >= playbackTime) {
+              subtitle.textContent = "Speak into your microphone";
+            }
+          };
+        } catch (error) {
+          console.error("Failed to play audio:", error);
         }
-        subtitle.textContent = "Speak into your microphone";
       }
 
       micButton.addEventListener("click", async () => {

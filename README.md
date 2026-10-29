@@ -1,6 +1,6 @@
 # Kural
 
-![Node.js](https://img.shields.io/badge/Node.js-18+-green)
+![Node.js](https://img.shields.io/badge/Node.js-20.11+-green)
 ![Web Audio](https://img.shields.io/badge/Web%20Audio-AudioWorklet-orange)
 ![WebSocket](https://img.shields.io/badge/WebSocket-ws-black)
 ![ONNX Runtime](https://img.shields.io/badge/Runtime-ONNX%20Runtime-purple)
@@ -82,21 +82,64 @@ landing/                      static site, deployed to GitHub Pages
 
 ## Run
 
-Requires Node.js 18+, NeMo-Speech.cpp, built `llama.cpp`, and model files (not tracked):
+Requires Node.js 20.11+ (`nvm use`), CMake, a C/C++ toolchain, and model files (not tracked):
 
 ```text
 src/SST/VAD/silero_vad.onnx
 models/Qwen3-0.6B-Q8_0.gguf
+models/Kokoro-82M-v1.0-ONNX/
 ```
+
+### One-time setup
 
 ```bash
 npm install
+
+# NeMo-Speech.cpp (ASR), CPU build
+git clone https://github.com/NVIDIA/NeMo-Speech.cpp
+cd NeMo-Speech.cpp
+git submodule update --init llama.cpp third_party/cpp-httplib
+scripts/configure.sh cpu-server
+cmake --build --preset cpu-server
+cd ..
+# or install the prebuilt CLI instead:
+# curl -fsSL https://github.com/NVIDIA/NeMo-Speech.cpp/raw/main/scripts/install.sh | sh
+
+# llama.cpp (LLM), CPU build
+git clone https://github.com/ggml-org/llama.cpp
+# static libs: binary keeps working if the project folder is moved
+cmake -S llama.cpp -B llama.cpp/build -DBUILD_SHARED_LIBS=OFF
+cmake --build llama.cpp/build --config Release -j --target llama-server
+```
+
+The ASR model (`nemotron-en` = `nvidia/nemotron-speech-streaming-en-0.6b`, Q8_0) downloads to `~/.cache/nemo-speech/` on first `serve`.
+
+### Start (one terminal each)
+
+```bash
+# 1. ASR :8080
 nemo-speech serve --asr-model nemotron-en --host 127.0.0.1 --port 8080
-llama.cpp/build/bin/llama-server --port 8081 -m models/Qwen3-0.6B-Q8_0.gguf
+# (source build: NeMo-Speech.cpp/build/cpu-server/bin/nemo-speech serve ...)
+
+# 2. LLM :8081
+./llama.cpp/build/bin/llama-server -t 2 --host 127.0.0.1 --port 8081 \
+  -m ./models/Qwen3-0.6B-Q8_0.gguf
+# shared-lib build moved from its original folder → "libllama-server-impl.so: cannot open":
+# prefix with LD_LIBRARY_PATH=./llama.cpp/build/bin, or rebuild as above
+
+# 3. App :3000
+nvm use
 node server.js
 ```
 
 Open `http://localhost:3000`.
+
+Check the services:
+
+```bash
+curl http://127.0.0.1:8080/v1/models
+curl http://127.0.0.1:8081/health
+```
 
 ## Status
 

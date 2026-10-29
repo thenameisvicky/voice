@@ -1,5 +1,5 @@
 export class Voice {
-    constructor({ audioFramer, vad, endpointer, batchTranscriber, reasoner, synthesizer, onEvent, utteranceBuffer, streamTranscriber }) {
+    constructor({ audioFramer, vad, endpointer, batchTranscriber, reasoner, synthesizer, onEvent, utteranceBuffer, streamTranscriber, onAudio }) {
         this.audioFramer = audioFramer;
         this.vad = vad;
         this.endpointer = endpointer;
@@ -8,7 +8,8 @@ export class Voice {
         this.synthesizer = synthesizer;
         this.onEvent = onEvent;
         this.utteranceBuffer = utteranceBuffer;
-        this.streamTranscriber = streamTranscriber
+        this.streamTranscriber = streamTranscriber;
+        this.onAudio = onAudio;
     }
 
     async voice(audioChunk) {
@@ -30,12 +31,24 @@ export class Voice {
 
             if (speechChunk) {
                 const transcript = await this.batchTranscriber.transcribe(speechChunk);
+                if (!transcript?.trim()) continue;
+                
                 const response = await this.reasoner.reason(transcript);
+                if (typeof response !== "string" || !response.trim()) {
+                    continue;
+                }
+
+                const result = await this.synthesizer.synthesize(response, {
+                    language: "en",
+                });
+
                 this.onEvent?.({
                     type: "transcript",
                     probability: voiceActivity.probability,
-                    text: response
+                    text: transcript,
                 });
+
+                this.onAudio?.(result.audioBuffer);
             }
         }
     }

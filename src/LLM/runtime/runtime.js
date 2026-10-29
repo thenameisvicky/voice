@@ -23,12 +23,13 @@ export class Runtime {
                 temperature:
                     options.temperature ??
                     this.temperature,
-
                 max_tokens:
                     options.maxTokens ??
                     this.maxTokens,
-
-                stream: false
+                stream: false,
+                chat_template_kwargs: {
+                    enable_thinking: false
+                }
             })
         });
 

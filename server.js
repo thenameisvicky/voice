@@ -14,6 +14,8 @@ import { Model } from "./src/LLM/model/model.js";
 import { Runtime } from "./src/LLM/runtime/runtime.js";
 import { LLM_CONFIG } from "./src/LLM/config.js";
 import { StreamTranscriber } from "./src/SST/transcriber/stream.js";
+import { initializeStrategy } from "./src/TTS/strategy/index.js";
+import { synthesize } from "./src/TTS/synthesizer/synthesizer.js";
 
 const server = http.createServer((req, res) => {
 
@@ -59,6 +61,10 @@ wss.on("connection", async (ws) => {
 
     await vad.init();
 
+    await initializeStrategy("en");
+
+    const synthesizer = { synthesize }
+
     const runtime = new Runtime({
         url: LLM_CONFIG.url,
         model: LLM_CONFIG.model,
@@ -90,7 +96,12 @@ wss.on("connection", async (ws) => {
         utteranceBuffer: utteranceBuffer,
         batchTranscriber: batchTranscriber,
         reasoner: reasoner,
-        streamTranscriber: streamTranscriber
+        streamTranscriber: streamTranscriber,
+        synthesizer: synthesizer,
+        onAudio: (audioBuffer) => {
+            if (ws.readyState !== ws.OPEN) return;
+            ws.send(audioBuffer, { binary: true });
+        }
     });
 
     ws.on("message", async (data, isBinary) => {
