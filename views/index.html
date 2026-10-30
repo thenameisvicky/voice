@@ -168,6 +168,30 @@
         height: 20px;
       }
 
+      .or {
+        margin-top: 28px;
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #4b5263;
+      }
+
+      .dial {
+        margin-top: 10px;
+        color: #c4c9d4;
+        font-size: 16px;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.04em;
+        text-decoration: none;
+        border-bottom: 1px solid rgba(196, 201, 212, 0.25);
+        padding-bottom: 2px;
+      }
+
+      .dial:hover {
+        color: #ffffff;
+        border-bottom-color: rgba(220, 38, 38, 0.7);
+      }
+
       .debug {
         position: absolute;
         bottom: 25px;
@@ -215,6 +239,9 @@
             <line x1="8" y1="22" x2="16" y2="22" />
           </svg>
         </button>
+
+        <div class="or">or dial</div>
+        <a class="dial" href="tel:+914447614304">+91 44 4761 4304</a>
       </div>
       <!-- <div id="debug" class="debug">probability: 0.000</div> -->
     </div>
