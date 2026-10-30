@@ -33,6 +33,7 @@ export class Runtime {
                 frequency_penalty: this.frequencyPenalty,
                 presence_penalty: this.presencePenalty,
                 stream: false,
+                ...(options.tools?.length ? { tools: options.tools } : {}),
                 chat_template_kwargs: {
                     enable_thinking: false
                 }
@@ -49,6 +50,6 @@ export class Runtime {
 
         const data =
             await response.json();
-        return data.choices?.[0]?.message?.content ?? "";
+        return data.choices?.[0]?.message ?? { content: "" };
     }
 }

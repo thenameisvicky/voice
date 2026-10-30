@@ -1,21 +1,21 @@
 import http from "http";
 import fs from "fs";
 import { WebSocketServer } from "ws";
-
-import { AudioFramer } from "./src/SST/VAD/framer.js";
-import { VADInference } from "./src/SST/VAD/inference.js";
 import { Voice } from "./src/voice/voice.js";
-import { Endpointer } from "./src/SST/VAD/endpointer.js";
-import { SST_CONFIG } from "./src/SST/config.js";
-import { UtteranceBuffer } from "./src/SST/utterance/utteranceBuffer.js";
-import { BatchTranscriber } from "./src/SST/transcriber/batch.js";
-import { Reasoner } from "./src/LLM/reasoner/reasoner.js";
-import { Model } from "./src/LLM/model/model.js";
-import { Runtime } from "./src/LLM/runtime/runtime.js";
-import { LLM_CONFIG } from "./src/LLM/config.js";
-import { StreamTranscriber } from "./src/SST/transcriber/stream.js";
-import { initializeStrategy } from "./src/TTS/strategy/index.js";
-import { synthesize } from "./src/TTS/synthesizer/synthesizer.js";
+import { handleExotelConnection } from "./src/telephony/exotel.js";
+import {
+    initTools,
+    getCustomerProfile,
+    getInventoryItem,
+    createInvoice
+} from "./src/LLM/reasoner/tools.js";
+
+const MONGO_URI = "mongodb+srv://vignesh:vicky123@wai-main.bfxxlrn.mongodb.net";
+const MONGO_DATABASE = "wai";
+const COMPANY_ID = "6ae2de9b39b1e00bc23ce6ce";
+const USER_ID = "6ae2de9b39b1e00bc23ce6cf";
+const APP_BASE_URL = process.env.APP_BASE_URL || "http://localhost:8082";
+const PUBLIC_TOKEN_SECRET = "publik-token";
 
 const server = http.createServer((req, res) => {
 
@@ -39,53 +39,39 @@ const server = http.createServer((req, res) => {
     res.end(content);
 });
 
-const wss = new WebSocketServer({
-    server
+const wss = new WebSocketServer({ noServer: true });
+const exotelWss = new WebSocketServer({ noServer: true });
+
+server.on("upgrade", (req, socket, head) => {
+    const { pathname } = new URL(req.url, "http://localhost");
+
+    const target =
+        pathname === "/exotel" ? exotelWss :
+        pathname === "/" ? wss :
+        null;
+
+    if (!target) {
+        socket.destroy();
+        return;
+    }
+
+    target.handleUpgrade(req, socket, head, (ws) => {
+        target.emit("connection", ws, req);
+    });
+});
+
+exotelWss.on("connection", (ws) => {
+
+    console.log("[EXOTEL] Stream connected");
+
+    handleExotelConnection(ws);
 });
 
 wss.on("connection", async (ws) => {
 
     console.log("[WS] Client connected");
 
-    const framer = new AudioFramer(512);
-
-    const vad = new VADInference();
-
-    const endpointer = new Endpointer(SST_CONFIG);
-
-    const utteranceBuffer = new UtteranceBuffer();
-
-    const batchTranscriber = new BatchTranscriber({ url: "http://127.0.0.1:8080/v1/audio/transcriptions" });
-
-    const streamTranscriber = new StreamTranscriber(batchTranscriber);
-
-    await vad.init();
-
-    await initializeStrategy("en");
-
-    const synthesizer = { synthesize }
-
-    const runtime = new Runtime({
-        url: LLM_CONFIG.url,
-        model: LLM_CONFIG.model,
-        temperature: LLM_CONFIG.temperature,
-        maxTokens: LLM_CONFIG.maxTokens,
-        frequencyPenalty: LLM_CONFIG.frequencyPenalty,
-        presencePenalty: LLM_CONFIG.presencePenalty
-    })
-
-    const model = new Model({ runtime });
-
-    const reasoner = new Reasoner({
-        model,
-        systemPrompt: LLM_CONFIG.systemPrompt,
-        maxHistoryMessages: LLM_CONFIG.maxHistoryMessages
-    });
-
-    const voice = new Voice({
-        audioFramer: framer,
-        vad: vad,
-        endpointer: endpointer,
+    const { voice } = await Voice.createVoice({
         onEvent: (event) => {
             if (ws.readyState !== ws.OPEN) {
                 return;
@@ -99,11 +85,6 @@ wss.on("connection", async (ws) => {
                 })
             );
         },
-        utteranceBuffer: utteranceBuffer,
-        batchTranscriber: batchTranscriber,
-        reasoner: reasoner,
-        streamTranscriber: streamTranscriber,
-        synthesizer: synthesizer,
         onAudio: (audioBuffer) => {
             if (ws.readyState !== ws.OPEN) return;
             ws.send(audioBuffer, { binary: true });
@@ -143,9 +124,30 @@ wss.on("connection", async (ws) => {
     });
 });
 
-server.listen(3000, () => {
+async function start() {
+    if (!MONGO_URI) {
+        console.warn("[SERVER] MONGO_URI is not set; voice DB tools will be unavailable");
+    } else {
+        await initTools({
+            mongoUri: MONGO_URI,
+            mongoDatabase: MONGO_DATABASE,
+            companyId: COMPANY_ID,
+            userId: USER_ID,
+            appBaseUrl: APP_BASE_URL,
+            publicTokenSecret: PUBLIC_TOKEN_SECRET
+        });
+    }
 
-    console.log(
-        "Server running at http://localhost:3000"
-    );
+    server.listen(3000, () => {
+        console.log(
+            "Server running at http://localhost:3000"
+        );
+    });
+}
+
+start().catch((error) => {
+    console.error("[SERVER] Failed to start:", error);
+    process.exit(1);
 });
+
+export { getCustomerProfile, getInventoryItem, createInvoice };

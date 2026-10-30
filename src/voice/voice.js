@@ -1,3 +1,18 @@
+import { LLM_CONFIG, buildSystemPrompt } from "../LLM/config.js";
+import { Model } from "../LLM/model/model.js";
+import { Reasoner } from "../LLM/reasoner/reasoner.js";
+import { TOOL_DEFINITIONS, ORDER_CONFIRMATION, createToolExecutor } from "../LLM/reasoner/agentTools.js";
+import { Runtime } from "../LLM/runtime/runtime.js";
+import { SST_CONFIG } from "../SST/config.js";
+import { BatchTranscriber } from "../SST/transcriber/batch.js";
+import { StreamTranscriber } from "../SST/transcriber/stream.js";
+import { UtteranceBuffer } from "../SST/utterance/utteranceBuffer.js";
+import { Endpointer } from "../SST/VAD/endpointer.js";
+import { AudioFramer } from "../SST/VAD/framer.js";
+import { VADInference } from "../SST/VAD/inference.js";
+import { initializeStrategy } from "../TTS/strategy/index.js";
+import { synthesize } from "../TTS/synthesizer/synthesizer.js";
+
 export class Voice {
     constructor({ audioFramer, vad, endpointer, batchTranscriber, reasoner, synthesizer, onEvent, utteranceBuffer, streamTranscriber, onAudio }) {
         this.audioFramer = audioFramer;
@@ -99,4 +114,51 @@ export class Voice {
             }
         }
     }
-}
+
+    static async createVoice({ onEvent, onAudio, customer = null, callId = null }) {
+        const framer = new AudioFramer(512);
+        const vad = new VADInference();
+        const endpointer = new Endpointer(SST_CONFIG);
+        const utteranceBuffer = new UtteranceBuffer();
+        const batchTranscriber = new BatchTranscriber({ url: "http://127.0.0.1:8080/v1/audio/transcriptions" });
+        const streamTranscriber = new StreamTranscriber(batchTranscriber);
+        const synthesizer = { synthesize };
+        const runtime = new Runtime({
+            url: LLM_CONFIG.url,
+            model: LLM_CONFIG.model,
+            temperature: LLM_CONFIG.temperature,
+            maxTokens: LLM_CONFIG.maxTokens,
+            frequencyPenalty: LLM_CONFIG.frequencyPenalty,
+            presencePenalty: LLM_CONFIG.presencePenalty
+        });
+        const model = new Model({ runtime });
+        const reasoner = new Reasoner({
+            model,
+            systemPrompt: buildSystemPrompt({ customer }),
+            maxHistoryMessages: LLM_CONFIG.maxHistoryMessages,
+            tools: TOOL_DEFINITIONS,
+            executeTool: createToolExecutor({ customer }),
+            maxToolRounds: LLM_CONFIG.maxToolRounds,
+            confirmation: ORDER_CONFIRMATION,
+            customer,
+            callId
+        });
+        const voice = new Voice({
+            audioFramer: framer,
+            vad: vad,
+            endpointer: endpointer,
+            onEvent: onEvent,
+            utteranceBuffer: utteranceBuffer,
+            batchTranscriber: batchTranscriber,
+            reasoner: reasoner,
+            streamTranscriber: streamTranscriber,
+            synthesizer: synthesizer,
+            onAudio: onAudio
+        });
+
+        await vad.init();
+        await initializeStrategy("en");
+
+        return { voice, synthesizer };
+    };
+};

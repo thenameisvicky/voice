@@ -1,0 +1,242 @@
+import { Voice } from "../voice/voice.js";
+import { lookupCustomer } from "../LLM/reasoner/agentTools.js";
+
+export function wavToPcm16(wav) {
+    if (wav.toString("ascii", 0, 4) !== "RIFF" || wav.toString("ascii", 8, 12) !== "WAVE") {
+        throw new Error("Not a WAV buffer");
+    }
+
+    let sampleRate = null;
+    let offset = 12;
+
+    while (offset + 8 <= wav.length) {
+        const id = wav.toString("ascii", offset, offset + 4);
+        const size = wav.readUInt32LE(offset + 4);
+        const body = offset + 8;
+
+        if (id === "fmt ") {
+            const format = wav.readUInt16LE(body);
+            const channels = wav.readUInt16LE(body + 2);
+            const bits = wav.readUInt16LE(body + 14);
+
+            if (format !== 1 || channels !== 1 || bits !== 16) {
+                throw new Error(`Unsupported WAV: format=${format} channels=${channels} bits=${bits}`);
+            }
+
+            sampleRate = wav.readUInt32LE(body + 4);
+        }
+
+        if (id === "data") {
+            if (!sampleRate) throw new Error("WAV data before fmt chunk");
+
+            const samples = new Int16Array(size / 2);
+            for (let i = 0; i < samples.length; i++) {
+                samples[i] = wav.readInt16LE(body + i * 2);
+            }
+            return { samples, sampleRate };
+        }
+
+        offset = body + size + (size % 2);
+    }
+
+    throw new Error("WAV has no data chunk");
+}
+
+export function resample(samples, inRate, outRate) {
+    if (inRate === outRate) return samples;
+
+    let input = samples;
+
+    if (outRate < inRate) {
+        input = lowPass(samples, (0.45 * outRate) / inRate, 63);
+    }
+
+    const ratio = inRate / outRate;
+    const output = new Int16Array(Math.floor(input.length / ratio));
+
+    for (let i = 0; i < output.length; i++) {
+        const position = i * ratio;
+        const index = Math.floor(position);
+        const fraction = position - index;
+        const a = input[index];
+        const b = input[index + 1] ?? a;
+        output[i] = Math.round(a + (b - a) * fraction);
+    }
+
+    return output;
+}
+
+function lowPass(samples, cutoff, taps) {
+    const half = (taps - 1) / 2;
+    const kernel = new Float32Array(taps);
+    let sum = 0;
+
+    for (let n = 0; n < taps; n++) {
+        const x = n - half;
+        const sinc = x === 0 ? 2 * cutoff : Math.sin(2 * Math.PI * cutoff * x) / (Math.PI * x);
+        const hamming = 0.54 - 0.46 * Math.cos((2 * Math.PI * n) / (taps - 1));
+        kernel[n] = sinc * hamming;
+        sum += kernel[n];
+    }
+
+    const output = new Int16Array(samples.length);
+
+    for (let i = 0; i < samples.length; i++) {
+        let acc = 0;
+        for (let k = 0; k < taps; k++) {
+            const j = i + k - half;
+            if (j >= 0 && j < samples.length) acc += samples[j] * kernel[k];
+        }
+        output[i] = Math.max(-32768, Math.min(32767, Math.round(acc / sum)));
+    }
+
+    return output;
+}
+
+export function toBase64Chunks(samples, chunkBytes) {
+    const bytes = Buffer.from(samples.buffer, samples.byteOffset, samples.byteLength);
+    const chunks = [];
+
+    for (let offset = 0; offset < bytes.length; offset += chunkBytes) {
+        const chunk = Buffer.alloc(chunkBytes);
+        bytes.copy(chunk, 0, offset, Math.min(offset + chunkBytes, bytes.length));
+        chunks.push(chunk.toString("base64"));
+    }
+
+    return chunks;
+}
+
+export function base64ToPcm16(payload) {
+    const bytes = Buffer.from(payload, "base64");
+    const samples = new Int16Array(Math.floor(bytes.length / 2));
+    for (let i = 0; i < samples.length; i++) {
+        samples[i] = bytes.readInt16LE(i * 2);
+    }
+    return samples;
+}
+
+export function handleExotelConnection(ws) {
+    let streamSid = null;
+    let sampleRate = 8000;
+    let voiceReady = null;
+    let turn = 0;
+
+    let queue = Promise.resolve();
+
+    const send = (message) => {
+        if (ws.readyState !== ws.OPEN) return;
+        ws.send(JSON.stringify(message));
+    };
+
+    const sendAudio = (wav) => {
+        const { samples, sampleRate: wavRate } = wavToPcm16(wav);
+        const pcm = resample(samples, wavRate, sampleRate);
+
+        for (const payload of toBase64Chunks(pcm, 3200)) {
+            send({ event: "media", stream_sid: streamSid, media: { payload } });
+        }
+
+        turn += 1;
+        send({ event: "mark", stream_sid: streamSid, mark: { name: `turn-${turn}-end` } });
+
+        console.log(`[EXOTEL] Sent ${(pcm.length / sampleRate).toFixed(2)}s audio (turn ${turn})`);
+    };
+
+    const start = async ({ callSid, from }) => {
+        const customer = await lookupCustomer(from).catch((error) => {
+            console.error("[EXOTEL] Customer lookup failed:", error);
+            return null;
+        });
+
+        console.log(`[EXOTEL] Customer: ${customer ? `${customer.name} (${customer.id})` : "not verified"}`);
+
+        const pipeline = await Voice.createVoice({
+            onEvent: (event) => {
+                if (event.type === "transcript" || event.type === "response") {
+                    console.log(`[EXOTEL][${event.type.toUpperCase()}] - ${event.text}`);
+                }
+            },
+            onAudio: sendAudio,
+            customer,
+            callId: callSid
+        });
+
+        const greetingText = customer
+            ? `Hello ${customer.name}, this is Yuga. How can I help you today?`
+            : "Hello, this is Yuga. How can I help you today?";
+
+        const greeting = await pipeline.synthesizer.synthesize(greetingText, { language: "en" });
+        sendAudio(greeting.audioBuffer);
+
+        return pipeline.voice;
+    };
+
+    ws.on("message", (data, isBinary) => {
+        if (isBinary) return;
+
+        let message;
+        try {
+            message = JSON.parse(data.toString());
+        } catch {
+            console.error("[EXOTEL] Non-JSON message ignored");
+            return;
+        }
+
+        switch (message.event) {
+            case "connected":
+                console.log("[EXOTEL] Connected");
+                break;
+
+            case "start": {
+                streamSid = message.stream_sid ?? message.start?.stream_sid;
+                sampleRate = Number(message.start?.media_format?.sample_rate) || 8000;
+
+                console.log(
+                    `[EXOTEL] Call ${message.start?.call_sid} from ${message.start?.from} ` +
+                    `(${sampleRate} Hz, stream ${streamSid})`
+                );
+
+                voiceReady = start({
+                    callSid: message.start?.call_sid,
+                    from: message.start?.from
+                });
+                voiceReady.catch((error) => {
+                    console.error("[EXOTEL] Pipeline init failed:", error);
+                    ws.close();
+                });
+                break;
+            }
+
+            case "media": {
+                if (!voiceReady || !message.media?.payload) break;
+
+                const payload = message.media.payload;
+
+                queue = queue
+                    .then(async () => {
+                        const voice = await voiceReady;
+                        const pcm = resample(base64ToPcm16(payload), sampleRate, 16000);
+                        await voice.voice(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+                    })
+                    .catch((error) => console.error("[EXOTEL] Voice error:", error));
+                break;
+            }
+
+            case "mark":
+                console.log(`[EXOTEL] Played ${message.mark?.name}`);
+                break;
+
+            case "dtmf":
+                console.log(`[EXOTEL] DTMF ${message.dtmf?.digit}`);
+                break;
+
+            case "stop":
+                console.log(`[EXOTEL] Stop (${message.stop?.reason})`);
+                ws.close();
+                break;
+        }
+    });
+
+    ws.on("close", () => console.log("[EXOTEL] Disconnected"));
+    ws.on("error", (error) => console.error("[EXOTEL] WS error:", error));
+}

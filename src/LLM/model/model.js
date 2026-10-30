@@ -5,10 +5,30 @@ export class Model {
     }
 
     async generate(messages, options = {}) {
+        const message = await this.runtime.generate(messages, options);
+        const toolCall = message.tool_calls?.[0];
 
-        return this.runtime.generate(
-            messages,
-            options
-        );
+        if (toolCall) {
+            let args;
+
+            try {
+                args = JSON.parse(toolCall.function?.arguments || "{}");
+            } catch {
+                args = null;
+            }
+
+            return {
+                type: "tool_call",
+                name: toolCall.function?.name,
+                arguments: args,
+                id: toolCall.id,
+                raw: message
+            };
+        }
+
+        return {
+            type: "final",
+            content: message.content ?? ""
+        };
     }
 }
