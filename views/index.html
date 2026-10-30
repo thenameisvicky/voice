@@ -280,6 +280,11 @@
             }
 
             const message = JSON.parse(event.data);
+            if (message.type === "hangup") {
+              status.textContent = "Call ended";
+              subtitle.textContent = "Thank you, have a nice day.";
+              return;
+            }
             if (message.type !== "voice_event") return;
             updateVoiceUI(message.event, message.probability, message.text);
           };
@@ -289,6 +294,14 @@
             connectionDot.classList.remove("connected");
             connectionText.textContent = "Disconnected";
             wave.setProbability(0);
+            if (stream) {
+              for (const track of stream.getTracks()) track.stop();
+              stream = null;
+            }
+            micButton.classList.remove("active");
+            if (status.textContent !== "Call ended") {
+              status.textContent = "Not listening";
+            }
           };
         } catch (error) {
           console.error("Failed to start voice:", error);

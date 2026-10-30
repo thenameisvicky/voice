@@ -1,8 +1,12 @@
 import http from "http";
 import fs from "fs";
+import path from "path";
+import { randomUUID } from "crypto";
 import { WebSocketServer } from "ws";
 import { Voice } from "./src/voice/voice.js";
 import { handleExotelConnection } from "./src/telephony/exotel.js";
+import telemetry from "./src/telemetry/telemetry.js";
+import { TELEMETRY_CONFIG } from "./src/telemetry/config.js";
 import {
     initTools,
     getCustomerProfile,
@@ -17,26 +21,58 @@ const USER_ID = "6ae2de9b39b1e00bc23ce6cf";
 const APP_BASE_URL = process.env.APP_BASE_URL || "http://localhost:8082";
 const PUBLIC_TOKEN_SECRET = "publik-token";
 
-const server = http.createServer((req, res) => {
+const CONTENT_TYPES = {
+    ".html": "text/html",
+    ".js": "text/javascript",
+    ".json": "application/json",
+    ".css": "text/css",
+    ".png": "image/png"
+};
 
-    let file = "index.html";
+const TELEMETRY_ROOT = path.resolve(TELEMETRY_CONFIG.outputDir);
 
-    if (req.url === "/audioProcessor.js") {
-        file = "audioProcessor.js";
+function resolveTelemetry(urlPath) {
+    const relative = urlPath.replace(/^\/telemetry\/?/, "") || "index.html";
+    const target = path.resolve(TELEMETRY_ROOT, relative);
+
+    if (target !== TELEMETRY_ROOT && !target.startsWith(TELEMETRY_ROOT + path.sep)) {
+        return null;
     }
 
-    const content = fs.readFileSync(
-        `./views/${file}`
-    );
+    try {
+        return fs.statSync(target).isDirectory() ? path.join(target, "index.html") : target;
+    } catch {
+        return null;
+    }
+}
 
-    res.writeHead(200, {
-        "Content-Type":
-            file.endsWith(".js")
-                ? "text/javascript"
-                : "text/html"
-    });
+const server = http.createServer((req, res) => {
 
-    res.end(content);
+    const { pathname } = new URL(req.url, "http://localhost");
+
+    const file = pathname.startsWith("/telemetry")
+        ? resolveTelemetry(pathname)
+        : path.join("./views", pathname === "/audioProcessor.js" ? "audioProcessor.js" : "index.html");
+
+    if (!file) {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("No telemetry report yet. Finish a call and reload.");
+        return;
+    }
+
+    try {
+        const content = fs.readFileSync(file);
+
+        res.writeHead(200, {
+            "Content-Type": CONTENT_TYPES[path.extname(file)] ?? "application/octet-stream"
+        });
+
+        res.end(content);
+    } catch (error) {
+        console.error("[SERVER] Static read failed:", error);
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Not found");
+    }
 });
 
 const wss = new WebSocketServer({ noServer: true });
@@ -71,7 +107,12 @@ wss.on("connection", async (ws) => {
 
     console.log("[WS] Client connected");
 
+    const callId = `browser-${randomUUID().slice(0, 8)}`;
+
+    telemetry.startTrace(callId, { channel: "browser", from: "localhost" });
+
     const { voice } = await Voice.createVoice({
+        callId,
         onEvent: (event) => {
             if (ws.readyState !== ws.OPEN) {
                 return;
@@ -88,6 +129,14 @@ wss.on("connection", async (ws) => {
         onAudio: (audioBuffer) => {
             if (ws.readyState !== ws.OPEN) return;
             ws.send(audioBuffer, { binary: true });
+        },
+        onHangup: ({ afterMs } = {}) => {
+            if (ws.readyState !== ws.OPEN) return;
+            ws.send(JSON.stringify({ type: "hangup" }));
+            const waitMs = Math.max(2500, (afterMs ?? 4000) + 400);
+            setTimeout(() => {
+                if (ws.readyState === ws.OPEN) ws.close();
+            }, waitMs);
         }
     });
 
@@ -105,6 +154,8 @@ wss.on("connection", async (ws) => {
                 "[VOICE] Error:",
                 error
             );
+
+            telemetry.recordError(callId, "pipeline", error);
         }
     });
 
@@ -113,6 +164,8 @@ wss.on("connection", async (ws) => {
         console.log(
             "[WS] Client disconnected"
         );
+
+        telemetry.endTrace(callId);
     });
 
     ws.on("error", (error) => {
@@ -121,6 +174,8 @@ wss.on("connection", async (ws) => {
             "[WS] Error:",
             error
         );
+
+        telemetry.recordError(callId, "transport", error);
     });
 });
 
@@ -138,12 +193,31 @@ async function start() {
         });
     }
 
+    await telemetry.measureBaseline();
+
     server.listen(3000, () => {
         console.log(
             "Server running at http://localhost:3000"
         );
+        console.log(
+            "Telemetry reports at http://localhost:3000/telemetry"
+        );
     });
 }
+
+async function shutdown(signal) {
+    console.log(`[SERVER] ${signal} received, flushing telemetry`);
+
+    for (const callId of [...telemetry.traces.keys()]) {
+        telemetry.endTrace(callId);
+    }
+
+    await telemetry.flush();
+    process.exit(0);
+}
+
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
 
 start().catch((error) => {
     console.error("[SERVER] Failed to start:", error);

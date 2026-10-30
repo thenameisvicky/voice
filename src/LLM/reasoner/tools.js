@@ -1,17 +1,6 @@
 import { MongoClient, ObjectId } from "mongodb";
 import { randomUUID } from "crypto";
 
-/**
- * Voice-agent DB tools that mirror wAI-server-new customer / inventory / invoice flows.
- *
- * Collections (same as billing-dashboard server):
- *   customerdetails, newinventorydetails, invoicedetails, invoiceeventdetails, companydetails
- *
- * Env / init config:
- *   MONGO_URI, MONGO_DATABASE, COMPANY_ID, USER_ID
- *   APP_BASE_URL, PUBLIC_TOKEN_SECRET (optional; used when issue=true)
- */
-
 let client = null;
 let db = null;
 let config = {
@@ -39,7 +28,6 @@ function nowUtc() {
     return new Date();
 }
 
-/** Same normalization as wAI-server-new customer routes. */
 export function normalizeIndianPhone(value) {
     const digits = String(value || "").replace(/\D+/g, "");
     if (digits.length === 10) {
@@ -227,12 +215,6 @@ export function toolsReady() {
     return db !== null && Boolean(config.companyId);
 }
 
-/**
- * Price a list of items without writing anything.
- * Same validation and math as createInvoice, so the quoted total matches the invoice.
- *
- * @param {Array<{inventory_id, quantity}>} items
- */
 export async function quoteOrder(items = []) {
     const database = requireDb();
     const companyId = requireCompanyId();
@@ -297,10 +279,6 @@ export async function closeTools() {
     }
 }
 
-/**
- * Look up an active customer by inbound phone number.
- * Mirrors customerdetails reads used by the billing server.
- */
 export async function getCustomerProfile(incomingNumber) {
     const database = requireDb();
     const companyId = requireCompanyId();
@@ -348,10 +326,6 @@ export async function getCustomerProfile(incomingNumber) {
     };
 }
 
-/**
- * List active inventory from newinventorydetails for the voice caller.
- * Returns order-relevant fields only (name, price, tax, stock, units).
- */
 export async function getInventoryItem(filter = {}) {
     const database = requireDb();
     const companyId = requireCompanyId();
@@ -400,21 +374,6 @@ export async function getInventoryItem(filter = {}) {
     return { status: "success", data };
 }
 
-/**
- * Create an invoice for inventory chosen by the caller.
- * Mirrors POST /api/main/invoice (create_invoice_document) in wAI-server-new.
- *
- * @param {object} params
- * @param {string} [params.customerId]
- * @param {string} [params.incomingNumber] - used when customerId is omitted
- * @param {string} [params.inventoryId] - single item shortcut
- * @param {number} [params.quantity=1]
- * @param {Array<{inventoryId|inventory_id, quantity}>} [params.items]
- * @param {string} [params.placeOfSupply]
- * @param {string} [params.invoiceType="Tax Invoice"]
- * @param {number} [params.discountPercentage=0]
- * @param {boolean} [params.issue=false] - also apply inventory + mark ISSUED
- */
 export async function createInvoice(params = {}) {
     const database = requireDb();
     const companyId = requireCompanyId();

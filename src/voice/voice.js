@@ -4,6 +4,8 @@ import { Reasoner } from "../LLM/reasoner/reasoner.js";
 import { TOOL_DEFINITIONS, ORDER_CONFIRMATION, createToolExecutor } from "../LLM/reasoner/agentTools.js";
 import { Runtime } from "../LLM/runtime/runtime.js";
 import { SST_CONFIG } from "../SST/config.js";
+import telemetry from "../telemetry/telemetry.js";
+import { STAGES } from "../telemetry/config.js";
 import { BatchTranscriber } from "../SST/transcriber/batch.js";
 import { StreamTranscriber } from "../SST/transcriber/stream.js";
 import { UtteranceBuffer } from "../SST/utterance/utteranceBuffer.js";
@@ -13,8 +15,12 @@ import { VADInference } from "../SST/VAD/inference.js";
 import { initializeStrategy } from "../TTS/strategy/index.js";
 import { synthesize } from "../TTS/synthesizer/synthesizer.js";
 
+const SAMPLE_RATE = 16000;
+
+const audioMs = (samples) => (samples.length / SAMPLE_RATE) * 1000;
+
 export class Voice {
-    constructor({ audioFramer, vad, endpointer, batchTranscriber, reasoner, synthesizer, onEvent, utteranceBuffer, streamTranscriber, onAudio }) {
+    constructor({ audioFramer, vad, endpointer, batchTranscriber, reasoner, synthesizer, onEvent, utteranceBuffer, streamTranscriber, onAudio, onHangup, callId }) {
         this.audioFramer = audioFramer;
         this.vad = vad;
         this.endpointer = endpointer;
@@ -25,9 +31,13 @@ export class Voice {
         this.utteranceBuffer = utteranceBuffer;
         this.streamTranscriber = streamTranscriber;
         this.onAudio = onAudio;
+        this.onHangup = onHangup;
+        this.callId = callId;
+        this.hangup = false;
     }
 
     async voice(audioChunk) {
+        if (this.hangup) return;
 
         const pcmChunk = new Int16Array(
             audioChunk.buffer,
@@ -38,38 +48,121 @@ export class Voice {
         const frames = this.audioFramer.process(pcmChunk);
 
         for (const frame of frames) {
+            telemetry.startSpan(this.callId, STAGES.VAD, { frameSamples: frame.length });
             const voiceActivity = await this.vad.process(frame);
+            telemetry.endSpan(this.callId, STAGES.VAD, {
+                ok: true,
+                probability: voiceActivity.probability
+            });
+
             this.onEvent?.({ type: "vad", probability: voiceActivity.probability });
             const event = this.endpointer.process({ probability: voiceActivity["probability"], frameSamples: voiceActivity["frameSamples"] });
 
             const speechChunk = this.utteranceBuffer.process({ event: event, frame: frame });
 
             if (speechChunk) {
-                const transcript = await this.batchTranscriber.transcribe(speechChunk);
-                if (!transcript?.trim()) continue;
-
-                this.onEvent?.({
-                    type: "transcript",
-                    probability: voiceActivity.probability,
-                    text: transcript,
-                });
-
-                const response = await this.reasoner.reason(transcript);
-                if (typeof response !== "string" || !response.trim()) {
-                    continue;
-                }
-
-                const result = await this.synthesizer.synthesize(response, {
-                    language: "en",
-                });
-
-                this.onEvent?.({
-                    type: "response",
-                    text: response,
-                });
-
-                this.onAudio?.(result.audioBuffer);
+                await this.turn(speechChunk, voiceActivity.probability);
             }
+        }
+    }
+
+    async turn(speechChunk, probability) {
+        const callId = this.callId;
+        const userAudioMs = audioMs(speechChunk);
+
+        telemetry.startTurn(callId, { userAudioMs });
+
+        try {
+            telemetry.startSpan(callId, STAGES.ASR, {
+                audioMs: userAudioMs,
+                samples: speechChunk.length
+            });
+
+            let transcript;
+
+            try {
+                transcript = await this.batchTranscriber.transcribe(speechChunk);
+            } catch (error) {
+                telemetry.endSpan(callId, STAGES.ASR, { error, audioMs: userAudioMs });
+                throw error;
+            }
+
+            telemetry.endSpan(callId, STAGES.ASR, {
+                ok: true,
+                audioMs: userAudioMs,
+                transcript,
+                chars: transcript?.length ?? 0
+            });
+
+            if (!transcript?.trim()) {
+                telemetry.endTurn(callId, { ok: true, userAudioMs, reason: "empty transcript" });
+                return;
+            }
+
+            this.onEvent?.({ type: "transcript", probability, text: transcript });
+
+            const reasoned = await this.reasoner.reason(transcript);
+            const response = typeof reasoned === "string" ? reasoned : reasoned?.content;
+            const hangup = Boolean(reasoned?.hangup);
+
+            if (typeof response !== "string" || !response.trim()) {
+                telemetry.endTurn(callId, {
+                    ok: false,
+                    transcript,
+                    userAudioMs,
+                    reason: "no reply produced"
+                });
+                return;
+            }
+
+            telemetry.startSpan(callId, STAGES.TTS, { chars: response.length });
+
+            let result;
+
+            try {
+                result = await this.synthesizer.synthesize(response, { language: "en" });
+            } catch (error) {
+                telemetry.endSpan(callId, STAGES.TTS, { error, chars: response.length });
+                throw error;
+            }
+
+            const replyAudioMs = result.audio?.audio && result.audio?.sampling_rate
+                ? (result.audio.audio.length / result.audio.sampling_rate) * 1000
+                : null;
+
+            telemetry.endSpan(callId, STAGES.TTS, {
+                ok: true,
+                audioMs: replyAudioMs,
+                chars: response.length
+            });
+
+            telemetry.recordModelUsage(callId, "Kokoro-82M-v1.0-ONNX", {
+                stage: STAGES.TTS,
+                audioMs: replyAudioMs,
+                chars: response.length
+            });
+
+            this.onEvent?.({ type: "response", text: response });
+
+            this.onAudio?.(result.audioBuffer, { hangup });
+
+            telemetry.endTurn(callId, {
+                ok: true,
+                transcript,
+                response,
+                userAudioMs,
+                replyAudioMs,
+                replyChars: response.length
+            });
+
+            if (hangup) {
+                this.hangup = true;
+                this.onHangup?.({ afterMs: replyAudioMs ?? 4000 });
+            }
+        } catch (error) {
+            telemetry.recordError(callId, STAGES.TURN, error);
+            telemetry.endTurn(callId, { ok: false, userAudioMs, reason: String(error?.message ?? error) });
+            throw error;
         }
     }
 
@@ -115,7 +208,7 @@ export class Voice {
         }
     }
 
-    static async createVoice({ onEvent, onAudio, customer = null, callId = null }) {
+    static async createVoice({ onEvent, onAudio, onHangup = null, customer = null, callId = null }) {
         const framer = new AudioFramer(512);
         const vad = new VADInference();
         const endpointer = new Endpointer(SST_CONFIG);
@@ -153,7 +246,9 @@ export class Voice {
             reasoner: reasoner,
             streamTranscriber: streamTranscriber,
             synthesizer: synthesizer,
-            onAudio: onAudio
+            onAudio: onAudio,
+            onHangup: onHangup,
+            callId: callId
         });
 
         await vad.init();

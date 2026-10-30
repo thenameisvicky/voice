@@ -1,5 +1,3 @@
-// tts/strategy/english.js
-
 import { KokoroTTS } from "kokoro-js";
 import { env } from "@huggingface/transformers";
 import { TTS_CONFIG } from "../config.js";

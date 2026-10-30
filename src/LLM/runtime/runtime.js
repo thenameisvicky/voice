@@ -1,3 +1,6 @@
+import { QUEUE_SOURCES, STAGES } from "../../telemetry/config.js";
+import telemetry from "../../telemetry/telemetry.js";
+
 export class Runtime {
     constructor({
         url,
@@ -16,6 +19,8 @@ export class Runtime {
     }
 
     async generate(messages, options = {}) {
+        const requestedAt = Date.now();
+
         const response = await fetch(this.url, {
             method: "POST",
             headers: {
@@ -50,6 +55,26 @@ export class Runtime {
 
         const data =
             await response.json();
+
+        if (data.timings) {
+            const servedMs =
+                Number(data.timings.prompt_ms ?? 0) +
+                Number(data.timings.predicted_ms ?? 0);
+
+            telemetry.recordQueueWait(
+                options.callId,
+                QUEUE_SOURCES.LLM_SERVER,
+                Date.now() - requestedAt - servedMs
+            );
+        }
+
+        telemetry.recordModelUsage(options.callId, this.model, {
+            stage: STAGES.LLM,
+            promptTokens: data.usage?.prompt_tokens,
+            completionTokens: data.usage?.completion_tokens,
+            totalTokens: data.usage?.total_tokens
+        });
+
         return data.choices?.[0]?.message ?? { content: "" };
     }
 }

@@ -1,3 +1,4 @@
+import { CALL_OUTRO } from "../config.js";
 import {
     toolsReady,
     getCustomerProfile,
@@ -66,6 +67,22 @@ export const TOOL_DEFINITIONS = [
                 required: ["items"]
             }
         }
+    },
+    {
+        type: "function",
+        function: {
+            name: "end_call",
+            description: "End the phone call after a goodbye. Call this when the customer says bye, that's all, or they are done. After a draft invoice is created the system ends the call for you.",
+            parameters: {
+                type: "object",
+                properties: {
+                    reason: {
+                        type: "string",
+                        description: "Why the call is ending, for example goodbye or done."
+                    }
+                }
+            }
+        }
     }
 ];
 
@@ -123,6 +140,10 @@ export function createToolExecutor({ customer }) {
             };
         },
 
+        async end_call() {
+            return { ok: true, hangup: true, message: CALL_OUTRO };
+        },
+
         async create_invoice({ items, customer_confirmed }) {
             if (!customer) {
                 return { ok: false, error: "No verified customer is linked to this call, so an invoice cannot be created." };
@@ -147,12 +168,12 @@ export function createToolExecutor({ customer }) {
     };
 
     return async function executeTool(name, args) {
-        if (!toolsReady()) {
-            return { ok: false, error: "The shop system is not available right now." };
-        }
-
         const handler = handlers[name];
         if (!handler) return { ok: false, error: `Unknown tool ${name}` };
+
+        if (name !== "end_call" && !toolsReady()) {
+            return { ok: false, error: "The shop system is not available right now." };
+        }
 
         return handler(args ?? {});
     };

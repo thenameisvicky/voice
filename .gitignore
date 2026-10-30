@@ -3,3 +3,7 @@ silero_vad.onnx
 whisper
 models
 *cpp
+
+# Generated telemetry reports, one folder per call.
+# Anchored, so it does not also swallow src/telemetry.
+/telemetry/

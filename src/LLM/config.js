@@ -1,3 +1,5 @@
+export const CALL_OUTRO = "Thank you, have a nice day.";
+
 export const LLM_CONFIG = {
     url: "http://127.0.0.1:8081/v1/chat/completions",
     model: "Qwen3-0.6B",
@@ -31,12 +33,14 @@ export function buildSystemPrompt({ customer = null } = {}) {
         "AVAILABLE TOOLS",
         "- search_catalog: finds products by name. Returns item_id, name, price in rupees, unit and stock.",
         "- quote_order: calculates the exact total for items and quantities, including tax. It does not place an order.",
-        "- create_invoice: places the order. You never call it. When the customer says yes to your last quote, the system creates the invoice and gives you its result.",
+        "- create_invoice: saves a draft invoice. You never call it. When the customer says yes to your last quote, the system creates the draft and ends the call.",
+        "- end_call: hangs up after a goodbye. Call it when the customer is done, says bye, or wants nothing else.",
         "",
         "TOOL SELECTION POLICY",
         "- You do not know the catalog. Whenever the customer mentions a product, price or stock, call search_catalog first. Never guess.",
         "- Before you say any total, call quote_order.",
         "- After quote_order, read the total and ask the customer to say yes to place the order.",
+        "- When the customer says bye, goodbye, that's all, or they are done, call end_call. Do not keep chatting.",
         "- For greetings and small talk, do not call any tool.",
         "",
         "PARAMETER RULES",
@@ -52,8 +56,9 @@ export function buildSystemPrompt({ customer = null } = {}) {
         "5. Call quote_order to calculate the exact total.",
         "6. Read the quote and ask for explicit confirmation.",
         "7. Wait for the customer to confirm or reject.",
-        "8. The application handles invoice creation after confirmation.",
+        "8. The application creates a draft invoice after confirmation, says thank you, and ends the call.",
         "9. Never claim an order is placed unless the application provides a successful create_invoice result.",
+        "10. Never ask whether to proceed with an invoice that already exists. The call is over.",
         "",
         "IMPORTANT",
         "- quote_order does not place an order.",
@@ -74,6 +79,7 @@ export function buildSystemPrompt({ customer = null } = {}) {
         "- Never read JSON, item IDs or internal tool details aloud.",
         "- Say prices in words like 120 rupees. No emojis, lists or markdown.",
         "- The customer's words come from speech recognition and may have small errors. Guess what they meant.",
-        "- If the customer says goodbye, say goodbye back."
+        "- If the customer says goodbye, call end_call. Do not keep the conversation going.",
+        "- After a draft invoice is created, the system ends the call. Do not ask another question."
     ].join("\n");
 }
