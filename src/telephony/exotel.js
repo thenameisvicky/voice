@@ -164,7 +164,9 @@ export function handleExotelConnection(ws) {
             return null;
         });
 
-        console.log(`[EXOTEL] Customer: ${customer ? `${customer.name} (${customer.id})` : "not verified"}`);
+        console.log(`[EXOTEL] Customer: ${customer
+            ? `${customer.name || "unnamed"} (${customer.id})${customer.created ? " [created]" : ""}`
+            : "not verified"}`);
 
         telemetry.startTrace(callId, {
             channel: "exotel",
@@ -191,7 +193,7 @@ export function handleExotelConnection(ws) {
             callId: callSid
         });
 
-        const greetingText = customer
+        const greetingText = customer?.name
             ? `Hello ${customer.name}, this is Yuga. How can I help you today?`
             : "Hello, this is Yuga. How can I help you today?";
 

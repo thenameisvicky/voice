@@ -92,7 +92,11 @@ export async function lookupCustomer(phone) {
     const profile = await getCustomerProfile(phone);
     if (profile.status !== "success") return null;
 
-    return { id: profile.data._id, name: profile.data.name };
+    return {
+        id: profile.data._id,
+        name: profile.data.name,
+        created: Boolean(profile.created)
+    };
 }
 
 const toInventoryItems = (items) =>

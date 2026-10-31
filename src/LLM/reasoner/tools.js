@@ -59,6 +59,70 @@ function serializeDoc(doc) {
     return out;
 }
 
+function serializeCustomer(customer) {
+    return serializeDoc({
+        _id: customer._id,
+        name: customer.name,
+        phone: customer.phone,
+        whatsapp_phone: customer.whatsapp_phone,
+        email: customer.email,
+        gstin: customer.gstin,
+        address: customer.address,
+        billing_address: customer.billing_address || customer.address,
+        billing_state: customer.billing_state,
+        billing_state_code: customer.billing_state_code || customer.billing_state,
+        customer_type: customer.customer_type,
+        gst_registration_type: customer.gst_registration_type || customer.customer_type,
+        notes: customer.notes,
+        company_id: customer.company_id
+    });
+}
+
+async function createCustomerFromIncomingNumber(incomingNumber) {
+    const database = requireDb();
+    const companyId = requireCompanyId();
+    const phone = normalizeIndianPhone(incomingNumber);
+    const now = nowUtc();
+    const customer = {
+        _id: new ObjectId(),
+        company_id: companyId,
+        user_id: String(config.userId || "voice-agent"),
+        name: "",
+        phone,
+        whatsapp_phone: phone,
+        gstin: null,
+        email: null,
+        address: null,
+        billing_address: null,
+        notes: "Created automatically from incoming voice call",
+        customer_type: "Individual",
+        gst_registration_type: "Individual",
+        billing_state: "",
+        billing_state_code: "",
+        campaign_id: null,
+        created_at: now,
+        updated_at: now,
+        is_active: true
+    };
+
+    await database.collection("customerdetails").insertOne(customer);
+    await database.collection("customerengagementdetails").insertOne({
+        _id: new ObjectId(),
+        entity_id: String(customer._id),
+        entity_type: "Customer",
+        event_type: "CustomerCreated",
+        metadata: {
+            source: "AI",
+            created_by_ai: true,
+            incoming_number: phone
+        },
+        created_at: now,
+        company_id: companyId
+    });
+
+    return customer;
+}
+
 function itemPriceMinor(item) {
     return Number(
         item.selling_price_minor ??
@@ -288,7 +352,7 @@ export async function getCustomerProfile(incomingNumber) {
         return { status: "error", message: "incomingNumber is required" };
     }
 
-    const customer = await database.collection("customerdetails").findOne({
+    let customer = await database.collection("customerdetails").findOne({
         company_id: companyId,
         is_active: true,
         $or: [
@@ -298,31 +362,18 @@ export async function getCustomerProfile(incomingNumber) {
     });
 
     if (!customer) {
+        customer = await createCustomerFromIncomingNumber(incomingNumber);
         return {
-            status: "error",
-            message: "Customer not found",
-            phone: normalizeIndianPhone(incomingNumber)
+            status: "success",
+            created: true,
+            data: serializeCustomer(customer)
         };
     }
 
     return {
         status: "success",
-        data: serializeDoc({
-            _id: customer._id,
-            name: customer.name,
-            phone: customer.phone,
-            whatsapp_phone: customer.whatsapp_phone,
-            email: customer.email,
-            gstin: customer.gstin,
-            address: customer.address,
-            billing_address: customer.billing_address || customer.address,
-            billing_state: customer.billing_state,
-            billing_state_code: customer.billing_state_code || customer.billing_state,
-            customer_type: customer.customer_type,
-            gst_registration_type: customer.gst_registration_type || customer.customer_type,
-            notes: customer.notes,
-            company_id: customer.company_id
-        })
+        created: false,
+        data: serializeCustomer(customer)
     };
 }
 

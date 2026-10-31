@@ -14,7 +14,9 @@ export const LLM_CONFIG = {
 export function buildSystemPrompt({ customer = null } = {}) {
     const customerContext = customer
         ? [
-            `Verified customer: ${customer.name}.`,
+            customer.name
+                ? `Verified customer: ${customer.name}.`
+                : "This caller is linked as a customer by their incoming phone number.",
             "Their account is already linked to this call. Never ask for their phone number or customer ID."
         ]
         : [
