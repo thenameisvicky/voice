@@ -56,26 +56,6 @@
         color: #ffffff;
       }
 
-      .connection {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        color: #8b93a7;
-        font-size: 13px;
-      }
-
-      .connection-dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 50%;
-        background: #555;
-      }
-
-      .connection-dot.connected {
-        background: #dc2626;
-        box-shadow: 0 0 10px rgba(220, 38, 38, 0.7);
-      }
-
       .center {
         display: flex;
         flex-direction: column;
@@ -101,22 +81,6 @@
         background: rgb(70, 74, 86);
       }
 
-      .wave-meta {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 8px;
-        font-family: monospace;
-        font-size: 11px;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        color: #4b5263;
-      }
-
-      .wave-value {
-        color: #c4c9d4;
-        font-variant-numeric: tabular-nums;
-      }
-
       .status {
         margin-top: 12px;
         font-size: 20px;
@@ -131,65 +95,21 @@
         color: #6f778a;
       }
 
-      .mic-button {
-        margin-top: 36px;
-        width: 56px;
-        height: 56px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.05);
-        color: white;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition:
-          background 200ms ease,
-          transform 150ms ease,
-          200ms ease;
-      }
-
-      .mic-button:hover {
-        background: rgba(255, 255, 255, 0.09);
-        box-shadow: 0 0 15px rgba(220, 38, 38, 0.2);
-      }
-
-      .mic-button:active {
-        transform: scale(0.94);
-      }
-
-      .mic-button.active {
-        background: rgba(220, 38, 38, 0.2);
-        border-color: rgba(220, 38, 38, 0.5);
-      }
-
-      .mic-icon {
-        width: 20px;
-        height: 20px;
-      }
-
-      .or {
-        margin-top: 28px;
-        font-size: 11px;
-        letter-spacing: 0.12em;
-        text-transform: uppercase;
-        color: #4b5263;
-      }
-
       .dial {
-        margin-top: 10px;
-        color: #c4c9d4;
-        font-size: 16px;
+        margin-top: 36px;
+        color: #ffffff;
+        font-size: 22px;
+        font-weight: 500;
         font-variant-numeric: tabular-nums;
         letter-spacing: 0.04em;
         text-decoration: none;
-        border-bottom: 1px solid rgba(196, 201, 212, 0.25);
-        padding-bottom: 2px;
+        border-bottom: 1px solid rgba(220, 38, 38, 0.7);
+        padding-bottom: 4px;
       }
 
       .dial:hover {
-        color: #ffffff;
-        border-bottom-color: rgba(220, 38, 38, 0.7);
+        color: #fecaca;
+        border-bottom-color: #dc2626;
       }
 
       .live {
@@ -276,42 +196,15 @@
     <div class="app">
       <div class="header">
         <div class="logo">Voice</div>
-        <div class="connection">
-          <div id="connectionDot" class="connection-dot"></div>
-          <span id="connectionText">Disconnected</span>
-        </div>
       </div>
 
       <div class="center">
         <div class="wave">
           <div id="waveBars" class="bars"></div>
-          <div class="wave-meta">
-            <span>Speech probability</span>
-            <span id="probabilityValue" class="wave-value">0.00</span>
-          </div>
         </div>
 
-        <div id="status" class="status">Not listening</div>
-        <div id="subtitle" class="subtitle">Press the microphone to start</div>
-
-        <button id="micButton" class="mic-button">
-          <svg
-            class="mic-icon"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          >
-            <rect x="9" y="2" width="6" height="12" rx="3" />
-            <path d="M5 10a7 7 0 0 0 14 0" />
-            <line x1="12" y1="19" x2="12" y2="22" />
-            <line x1="8" y1="22" x2="16" y2="22" />
-          </svg>
-        </button>
-
-        <div class="or">or dial</div>
+        <div id="status" class="status">Dial to speak</div>
+        <div id="subtitle" class="subtitle">Call from your phone</div>
         <a class="dial" href="tel:+914447614304">+91 44 4761 4304</a>
       </div>
       <div id="live" class="live">
@@ -325,96 +218,6 @@
     </div>
 
     <script>
-      const micButton = document.getElementById("micButton");
-      const probabilityValue = document.getElementById("probabilityValue");
-      const status = document.getElementById("status");
-      const subtitle = document.getElementById("subtitle");
-      const debug = document.getElementById("debug");
-      const connectionDot = document.getElementById("connectionDot");
-      const connectionText = document.getElementById("connectionText");
-
-      let socket = null;
-      let audioContext = null;
-      let stream = null;
-      let processor = null;
-      let playbackTime = 0;
-      let pendingReplies = [];
-
-      async function startVoice() {
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-              channelCount: 1,
-              echoCancellation: true,
-              noiseSuppression: false,
-              autoGainControl: false,
-            },
-          });
-
-          audioContext = new AudioContext();
-          // Same host the page came from, so it works on localhost and behind the tunnel (wss on https).
-          const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
-          socket = new WebSocket(`${wsProtocol}//${location.host}`);
-          socket.binaryType = "arraybuffer";
-
-          socket.onopen = async () => {
-            connectionDot.classList.add("connected");
-            connectionText.textContent = "Connected";
-            await audioContext.audioWorklet.addModule("./audioProcessor.js");
-
-            const source = audioContext.createMediaStreamSource(stream);
-            processor = new AudioWorkletNode(audioContext, "audio-processor");
-
-            processor.port.onmessage = (event) => {
-              const pcm16Buffer = event.data;
-              if (socket.readyState !== WebSocket.OPEN) return;
-              // Half-duplex: drop mic audio while a reply plays (+300 ms tail)
-              // so the assistant doesn't transcribe its own voice.
-              if (audioContext.currentTime < playbackTime + 0.3) return;
-              socket.send(pcm16Buffer);
-            };
-
-            source.connect(processor);
-            micButton.classList.add("active");
-            status.textContent = "Listening";
-            subtitle.textContent = "Speak into your microphone";
-          };
-
-          socket.onmessage = (event) => {
-            if (event.data instanceof ArrayBuffer) {
-              playAudio(event.data);
-              return;
-            }
-
-            const message = JSON.parse(event.data);
-            if (message.type === "hangup") {
-              status.textContent = "Call ended";
-              subtitle.textContent = "Thank you, have a nice day.";
-              return;
-            }
-            if (message.type !== "voice_event") return;
-            updateVoiceUI(message.event, message.probability, message.text);
-          };
-
-          socket.onerror = (error) => console.error("WebSocket error:", error);
-          socket.onclose = () => {
-            connectionDot.classList.remove("connected");
-            connectionText.textContent = "Disconnected";
-            wave.setProbability(0);
-            if (stream) {
-              for (const track of stream.getTracks()) track.stop();
-              stream = null;
-            }
-            micButton.classList.remove("active");
-            if (status.textContent !== "Call ended") {
-              status.textContent = "Not listening";
-            }
-          };
-        } catch (error) {
-          console.error("Failed to start voice:", error);
-        }
-      }
-
       // Bars whose heights morph with the VAD speech probability.
       class ProbabilityBars {
         constructor(container, { count = 10, rest, active }) {
@@ -484,59 +287,13 @@
         rest: [70, 74, 86],
         active: [220, 38, 38],
       });
-      let shownProbability = 0;
 
       function renderWave(now) {
         wave.frame(now);
-        shownProbability += (wave.level - shownProbability) * 0.2;
-        probabilityValue.textContent = shownProbability.toFixed(2);
         requestAnimationFrame(renderWave);
       }
 
       requestAnimationFrame(renderWave);
-
-      function updateVoiceUI(event, probability, text) {
-        if (typeof probability === "number") {
-          wave.setProbability(probability);
-        }
-
-        // transcript → response → audio all arrive together, after ASR + LLM + TTS.
-        if (event === "transcript" && text?.trim()) {
-          subtitle.textContent = `You: ${text}`;
-        }
-
-        // Held until its audio starts, so the text appears as the agent speaks.
-        if (event === "response" && text?.trim()) {
-          pendingReplies.push(text);
-        }
-      }
-
-      // Server sends one WAV per reply; queue so replies never overlap.
-      async function playAudio(arrayBuffer) {
-        try {
-          const buffer = await audioContext.decodeAudioData(arrayBuffer);
-          const source = audioContext.createBufferSource();
-          source.buffer = buffer;
-          source.connect(audioContext.destination);
-
-          const reply = pendingReplies.shift();
-          const startAt = Math.max(audioContext.currentTime, playbackTime);
-          source.start(startAt);
-          playbackTime = startAt + buffer.duration;
-
-          setTimeout(() => {
-            if (reply) status.textContent = reply;
-          }, (startAt - audioContext.currentTime) * 1000);
-
-          source.onended = () => {
-            if (audioContext.currentTime >= playbackTime) {
-              subtitle.textContent = "Speak into your microphone";
-            }
-          };
-        } catch (error) {
-          console.error("Failed to play audio:", error);
-        }
-      }
 
       // Phone-call transcripts pushed by the server on /live. Reconnects if the server restarts.
       const live = document.getElementById("live");
@@ -579,11 +336,6 @@
       }
 
       connectLive();
-
-      micButton.addEventListener("click", async () => {
-        if (socket && socket.readyState === WebSocket.OPEN) return;
-        await startVoice();
-      });
     </script>
   </body>
 </html>
