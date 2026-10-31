@@ -4,6 +4,7 @@ import { INFERENCE_CONFIG } from "../inference/config.js";
 import telemetry from "../telemetry/telemetry.js";
 import { QUEUE_SOURCES, STAGES } from "../telemetry/config.js";
 import { transfers } from "./callTransfer.js";
+import { broadcast } from "./liveFeed.js";
 
 export function wavToPcm16(wav) {
     if (wav.toString("ascii", 0, 4) !== "RIFF" || wav.toString("ascii", 8, 12) !== "WAVE") {
@@ -208,6 +209,7 @@ export function handleExotelConnection(ws) {
             onEvent: (event) => {
                 if (event.type === "transcript" || event.type === "response") {
                     console.log(`[EXOTEL][${event.type.toUpperCase()}] - ${event.text}`);
+                    broadcast({ callId, event: event.type, text: event.text });
                 }
             },
             onAudio: (wav, { hangup: hangupAfter } = {}) => sendAudio(wav, { hangupAfter }),
@@ -239,6 +241,8 @@ export function handleExotelConnection(ws) {
         });
 
         sendAudio(greeting.audioBuffer);
+        broadcast({ callId, event: "start" });
+        broadcast({ callId, event: "response", text: greetingText });
 
         return pipeline.voice;
     };
@@ -349,6 +353,7 @@ export function handleExotelConnection(ws) {
 
     ws.on("close", () => {
         console.log("[EXOTEL] Disconnected");
+        if (callId) broadcast({ callId, event: "end" });
         finish();
     });
 

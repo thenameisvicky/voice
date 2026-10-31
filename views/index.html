@@ -192,6 +192,77 @@
         border-bottom-color: rgba(220, 38, 38, 0.7);
       }
 
+      .live {
+        position: absolute;
+        right: 32px;
+        top: 80px;
+        bottom: 32px;
+        width: min(360px, calc(100vw - 64px));
+        display: none;
+        flex-direction: column;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        background: #0a0202;
+        overflow: hidden;
+      }
+
+      .live.on {
+        display: flex;
+      }
+
+      .live-head {
+        display: flex;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        font-size: 11px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #8b93a7;
+      }
+
+      .live-state.active {
+        color: #dc2626;
+      }
+
+      .live-lines {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .live-line {
+        font-size: 14px;
+        line-height: 1.45;
+        color: #c4c9d4;
+        white-space: pre-line;
+      }
+
+      .live-line b {
+        display: block;
+        font-size: 10px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #4b5263;
+        font-weight: 600;
+      }
+
+      .live-line.yuga b {
+        color: #dc2626;
+      }
+
+      @media (max-width: 900px) {
+        .live {
+          position: static;
+          width: calc(100vw - 32px);
+          height: 40vh;
+          margin-top: 24px;
+        }
+      }
+
       .debug {
         position: absolute;
         bottom: 25px;
@@ -243,6 +314,13 @@
         <div class="or">or dial</div>
         <a class="dial" href="tel:+914447614304">+91 44 4761 4304</a>
       </div>
+      <div id="live" class="live">
+        <div class="live-head">
+          <span>Live call</span>
+          <span id="liveState" class="live-state"></span>
+        </div>
+        <div id="liveLines" class="live-lines"></div>
+      </div>
       <!-- <div id="debug" class="debug">probability: 0.000</div> -->
     </div>
 
@@ -274,7 +352,9 @@
           });
 
           audioContext = new AudioContext();
-          socket = new WebSocket("ws://localhost:3000");
+          // Same host the page came from, so it works on localhost and behind the tunnel (wss on https).
+          const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+          socket = new WebSocket(`${wsProtocol}//${location.host}`);
           socket.binaryType = "arraybuffer";
 
           socket.onopen = async () => {
@@ -457,6 +537,48 @@
           console.error("Failed to play audio:", error);
         }
       }
+
+      // Phone-call transcripts pushed by the server on /live. Reconnects if the server restarts.
+      const live = document.getElementById("live");
+      const liveLines = document.getElementById("liveLines");
+      const liveState = document.getElementById("liveState");
+
+      function addLiveLine(who, text) {
+        const line = document.createElement("div");
+        line.className = `live-line ${who === "Yuga" ? "yuga" : ""}`;
+        const label = document.createElement("b");
+        label.textContent = who;
+        line.append(label, text);
+        liveLines.append(line);
+        liveLines.scrollTop = liveLines.scrollHeight;
+      }
+
+      function connectLive() {
+        const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+        const feed = new WebSocket(`${wsProtocol}//${location.host}/live`);
+
+        feed.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+          if (message.type !== "live") return;
+
+          if (message.event === "start") {
+            liveLines.replaceChildren();
+            live.classList.add("on");
+            liveState.textContent = "In progress";
+            liveState.classList.add("active");
+          } else if (message.event === "end") {
+            liveState.textContent = "Ended";
+            liveState.classList.remove("active");
+          } else if (message.text?.trim()) {
+            live.classList.add("on");
+            addLiveLine(message.event === "response" ? "Yuga" : "Caller", message.text);
+          }
+        };
+
+        feed.onclose = () => setTimeout(connectLive, 3000);
+      }
+
+      connectLive();
 
       micButton.addEventListener("click", async () => {
         if (socket && socket.readyState === WebSocket.OPEN) return;

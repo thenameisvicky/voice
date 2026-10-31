@@ -6,6 +6,7 @@ import { randomUUID } from "crypto";
 import { WebSocketServer } from "ws";
 import { Voice } from "./src/voice/voice.js";
 import { handleExotelConnection } from "./src/telephony/exotel.js";
+import { addViewer } from "./src/telephony/liveFeed.js";
 import {
     handleExotelBillingRequest,
     handleExotelStatusRequest
@@ -131,12 +132,14 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ noServer: true });
 const exotelWss = new WebSocketServer({ noServer: true });
+const liveWss = new WebSocketServer({ noServer: true });
 
 server.on("upgrade", (req, socket, head) => {
     const { pathname } = new URL(req.url, "http://localhost");
 
     const target =
         pathname === "/exotel" ? exotelWss :
+        pathname === "/live" ? liveWss :
         pathname === "/" ? wss :
         null;
 
@@ -149,6 +152,8 @@ server.on("upgrade", (req, socket, head) => {
         target.emit("connection", ws, req);
     });
 });
+
+liveWss.on("connection", (ws) => addViewer(ws));
 
 exotelWss.on("connection", (ws) => {
 
