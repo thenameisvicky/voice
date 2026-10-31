@@ -131,6 +131,10 @@ export function handleExotelConnection(ws) {
 
     let queue = Promise.resolve();
 
+    const pendingMarks = new Set();
+    let playbackStartedAt = 0;
+    let chunkReceivedAt = 0;
+
     const send = (message) => {
         if (ws.readyState !== ws.OPEN) return;
         ws.send(JSON.stringify(message));
@@ -156,8 +160,20 @@ export function handleExotelConnection(ws) {
         turn += 1;
         const markName = hangupAfter ? "hangup" : `turn-${turn}-end`;
         send({ event: "mark", stream_sid: streamSid, mark: { name: markName } });
+        if (pendingMarks.size === 0) playbackStartedAt = Date.now();
+        pendingMarks.add(markName);
 
         console.log(`[EXOTEL] Sent ${(pcm.length / sampleRate).toFixed(2)}s audio (turn ${turn}${hangupAfter ? ", then hangup" : ""})`);
+    };
+
+    // Caller talked over Yuga: drop the audio Exotel still has buffered. Goodbye and transfer audio is never cut.
+    // Speech queued from before this reply started does not count, or a backlog would cut the fresh reply.
+    const bargeIn = () => {
+        if (hangingUp || pendingMarks.size === 0) return;
+        if (chunkReceivedAt < playbackStartedAt) return;
+        pendingMarks.clear();
+        send({ event: "clear", stream_sid: streamSid });
+        console.log("[EXOTEL] Caller interrupted, playback cleared");
     };
 
     const start = async ({ callSid, from, to, accountSid }) => {
@@ -195,6 +211,7 @@ export function handleExotelConnection(ws) {
                 }
             },
             onAudio: (wav, { hangup: hangupAfter } = {}) => sendAudio(wav, { hangupAfter }),
+            onBargeIn: bargeIn,
             onHangup: ({ afterMs } = {}) => {
                 hangingUp = true;
                 const waitMs = Math.max(2500, (afterMs ?? 4000) + 800);
@@ -280,6 +297,7 @@ export function handleExotelConnection(ws) {
                         );
 
                         const voice = await voiceReady;
+                        chunkReceivedAt = enqueuedAt;
                         const pcm = resample(base64ToPcm16(payload), sampleRate, 16000);
                         await voice.voice(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength));
                     })
@@ -291,6 +309,7 @@ export function handleExotelConnection(ws) {
             }
 
             case "mark":
+                pendingMarks.delete(message.mark?.name);
                 console.log(`[EXOTEL] Played ${message.mark?.name}`);
                 if (message.mark?.name === "hangup") hangup();
                 break;

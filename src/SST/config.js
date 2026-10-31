@@ -3,5 +3,6 @@ export const SST_CONFIG = {
     endThreshold: 0.3,
     minSpeechDurationMs: 100,
     minSilenceDurationMs: 300,
-    preSpeechBufferMs: 200
+    preSpeechBufferMs: 200,
+    bargeInMs: 400
 };

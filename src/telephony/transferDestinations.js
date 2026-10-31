@@ -20,7 +20,7 @@ export const EXOTEL_STREAM_URL =
     "wss://813a-2401-4900-c98d-1c9d-3beb-b879-3cb0-7162.ngrok-free.app/exotel";
 export const EXOTEL_PUBLIC_BASE_URL =
     "https://813a-2401-4900-c98d-1c9d-3beb-b879-3cb0-7162.ngrok-free.app";
-export const SUPPORT_TRANSFER_NUMBER = "+91636980395";
+export const SUPPORT_TRANSFER_NUMBER = "+916369808395";
 
 const HARDCODED_DESTINATIONS = [
     {

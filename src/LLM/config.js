@@ -30,7 +30,8 @@ const OPENROUTER = {
     provider: "openrouter",
     baseUrl: "https://openrouter.ai/api/v1",
     model: OPENROUTER_DEFAULT_MODEL,
-    maxTokens: 512,
+    // Reasoning models (the nemotron fallback) spend 500-1100 tokens thinking before a tool call; 512 left empty replies.
+    maxTokens: 2048,
     localCompat: false,
     sendTools: true
 };

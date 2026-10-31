@@ -23,7 +23,7 @@ const SAMPLE_RATE = 16000;
 const audioMs = (samples) => (samples.length / SAMPLE_RATE) * 1000;
 
 export class Voice {
-    constructor({ audioFramer, vad, endpointer, batchTranscriber, reasoner, synthesizer, onEvent, utteranceBuffer, streamTranscriber, onAudio, onHangup, callId }) {
+    constructor({ audioFramer, vad, endpointer, batchTranscriber, reasoner, synthesizer, onEvent, utteranceBuffer, streamTranscriber, onAudio, onHangup, onBargeIn = null, bargeInMs = SST_CONFIG.bargeInMs, callId }) {
         this.audioFramer = audioFramer;
         this.vad = vad;
         this.endpointer = endpointer;
@@ -35,8 +35,33 @@ export class Voice {
         this.streamTranscriber = streamTranscriber;
         this.onAudio = onAudio;
         this.onHangup = onHangup;
+        this.onBargeIn = onBargeIn;
+        this.bargeInMs = bargeInMs;
         this.callId = callId;
         this.hangup = false;
+        this.speechMs = 0;
+        this.bargedIn = false;
+    }
+
+    trackBargeIn(event, probability, frameSamples) {
+        if (!this.onBargeIn || !event) return;
+
+        if (event.type === "END") {
+            this.speechMs = 0;
+            this.bargedIn = false;
+            return;
+        }
+
+        if (event.type === "START") {
+            this.speechMs = this.endpointer.minSpeechDurationMs ?? 0;
+        } else if (this.endpointer.state === "SPEAKING" && probability >= (this.endpointer.startThreshold ?? 0.5)) {
+            this.speechMs += (frameSamples / SAMPLE_RATE) * 1000;
+        }
+
+        if (!this.bargedIn && this.speechMs >= this.bargeInMs) {
+            this.bargedIn = true;
+            this.onBargeIn();
+        }
     }
 
     async voice(audioChunk) {
@@ -60,6 +85,7 @@ export class Voice {
 
             this.onEvent?.({ type: "vad", probability: voiceActivity.probability });
             const event = this.endpointer.process({ probability: voiceActivity["probability"], frameSamples: voiceActivity["frameSamples"] });
+            this.trackBargeIn(event, voiceActivity.probability, voiceActivity.frameSamples ?? frame.length);
 
             const speechChunk = this.utteranceBuffer.process({ event: event, frame: frame });
 
@@ -216,6 +242,7 @@ export class Voice {
         onEvent,
         onAudio,
         onHangup = null,
+        onBargeIn = null,
         customer = null,
         callId = null,
         channel = "browser",
@@ -289,6 +316,7 @@ export class Voice {
             synthesizer: synthesizer,
             onAudio: onAudio,
             onHangup: onHangup,
+            onBargeIn: onBargeIn,
             callId: callId
         });
 
