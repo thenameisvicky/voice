@@ -239,10 +239,10 @@
           <div class="card"><span class="badge working">Working</span><h3>Voice calls</h3><p>Exotel inbound audio, Silero VAD, Nemotron ASR. Provider mode speaks with Sarvam. Local mode uses Kokoro. Hang-up after goodbye or invoice.</p></div>
           <div class="card"><span class="badge working">Working</span><h3>Catalogue</h3><p>search_catalog lists or searches Mongo. Recorded names and prices only. item_id stays in the tool, never in speech.</p></div>
           <div class="card"><span class="badge working">Working</span><h3>Customers</h3><p>Every recorded call linked Vicky from 09789729792. Missing numbers create an Individual customer.</p></div>
-          <div class="card"><span class="badge working">Working</span><h3>Quotes &amp; invoices</h3><p>Three draft invoices on disk after an explicit yes. One quoted call never called create_invoice. Both outcomes are in the reports.</p></div>
+          <div class="card"><span class="badge working">Working</span><h3>Quotes &amp; invoices</h3><p>Four draft invoices on disk after an explicit yes. One quoted call never called create_invoice. Both outcomes are in the reports.</p></div>
           <div class="card"><span class="badge working">Working</span><h3>Stock checks</h3><p>cb0a2a3f: 20 rice requested, 5 in stock, partial ₹288.75, then INV-48CFE293.</p></div>
           <div class="card"><span class="badge working">Working</span><h3>Order edits</h3><p>c6d71d7c: five sugar quoted at ₹210, then one biscuit added, new total ₹233.60, INV-619363EE.</p></div>
-          <div class="card"><span class="badge partial">Partial</span><h3>Human transfer</h3><p>9329c0d7 confirmed a support transfer. Dial failed. Yuga does not say the person is already on the line.</p></div>
+          <div class="card"><span class="badge partial">Partial</span><h3>Human transfer</h3><p>Three confirmed support transfers. 256f1e58 rang support with no answer. No call recorded a connected transfer. Yuga does not say the person is already on the line.</p></div>
           <div class="card"><span class="badge working">Working</span><h3>Yuga telemetry</h3><p>Per-call HTML for ASR, LLM, TTS, tools, CPU, RAM, errors, and optional Exotel cost.</p></div>
         </div>
         <p class="tiny">Payment collection, payment links, and “paid” status are not on the call. Draft invoices are UnPaid. Streaming ASR exists as an unused path. Multilingual voice is planned.</p>
@@ -253,8 +253,8 @@
     <section class="slide" aria-label="Recorded scenarios">
       <div class="inner">
         <div class="kicker">Live Exotel calls · telemetry/calls</div>
-        <h2>Three invoices and one transfer, all recorded.</h2>
-        <div class="grid g3">
+        <h2>Four invoices and three transfer attempts, all recorded.</h2>
+        <div class="grid g4">
           <div class="card">
             <span class="badge working">Invoice created</span>
             <h3>Multi-product</h3>
@@ -286,8 +286,18 @@
               <li>New total ₹233.60. Yes → <span class="inv">INV-619363EE</span>.</li>
             </ul>
           </div>
+          <div class="card">
+            <span class="badge working">Invoice created</span>
+            <h3>Single item</h3>
+            <div class="meta"><code>5cfeb2d7…1aav</code> · 1m 10s · 7 turns · OpenRouter + Sarvam</div>
+            <ul>
+              <li>Lists the catalogue.</li>
+              <li>“One sugar.” Quote ₹42 total.</li>
+              <li>Yes → <span class="inv">INV-46A11B7F</span>.</li>
+            </ul>
+          </div>
         </div>
-        <p class="tiny"><code>9329c0d7…1aav</code> asked to speak to a person, confirmed, and Yuga started a support transfer. The dial failed. <code>62b3c465…1aav</code> quoted ₹233.60, heard yes, and never called create_invoice. <code>b8a5781d…1aav</code> asked for a transfer and got no reply. All three are in the telemetry slide.</p>
+        <p class="tiny">Transfers: <code>9329c0d7…1aav</code> dial failed. <code>256f1e58…1aav</code> rang support, no answer. <code>a58c99ec…1aav</code> dialled, no connect status within 60 s. <code>62b3c465…1aav</code> quoted ₹233.60, heard yes, and never called create_invoice. <code>b8a5781d…1aav</code> asked for a transfer and got no reply. All three are in the telemetry slide.</p>
       </div>
     </section>
 
@@ -378,14 +388,29 @@
             <p class="tiny" style="margin-top:8px">INV-619363EE · ₹233.60 · create_invoice 731 ms</p>
           </div>
           <div class="card">
-            <span class="badge miss">Miss or fail</span>
-            <h3>Yes without invoice · transfer dial fail</h3>
-            <p class="tiny" style="margin-top:8px"><code>62b3c465</code> quoted ₹233.60, heard yes, never called create_invoice.</p>
-            <p class="tiny" style="margin-top:8px"><code>9329c0d7</code> started a support transfer. Dial failed.</p>
-            <p class="tiny" style="margin-top:8px"><code>b8a5781d</code> asked for a transfer. The model returned an empty reply, so no transfer started.</p>
+            <span class="badge working">Invoice</span>
+            <h3>One sugar</h3>
+            <div class="meta"><code>5cfeb2d7…1aav</code></div>
+            <p>1m 10s · 7 turns · OpenRouter + Sarvam</p>
+            <p class="tiny" style="margin-top:8px">INV-46A11B7F · ₹42 · create_invoice 420 ms</p>
           </div>
         </div>
-        <p class="tiny">Telemetry is for seeing both outcomes. Three calls wrote a draft invoice. One quoted and did not. One transfer started and the dial failed. One transfer request got no reply. Full reports: <code>telemetry/calls/&lt;callId&gt;/index.html</code>.</p>
+        <div class="grid g2">
+          <div class="card">
+            <span class="badge partial">Transfer</span>
+            <h3>Support transfer attempts</h3>
+            <p class="tiny" style="margin-top:8px"><code>256f1e58</code> confirmed → Exotel dialled support → no-answer after 48 s.</p>
+            <p class="tiny" style="margin-top:8px"><code>a58c99ec</code> confirmed → dialled → no connect status within 60 s, marked timeout.</p>
+            <p class="tiny" style="margin-top:8px"><code>9329c0d7</code> confirmed → dial failed.</p>
+          </div>
+          <div class="card">
+            <span class="badge miss">Miss or fail</span>
+            <h3>Yes without invoice · no reply</h3>
+            <p class="tiny" style="margin-top:8px"><code>62b3c465</code> quoted ₹233.60, heard yes, never called create_invoice.</p>
+            <p class="tiny" style="margin-top:8px"><code>b8a5781d</code> and <code>5cfeb2d7</code> asked for a transfer. The model returned an empty reply, so no transfer started.</p>
+          </div>
+        </div>
+        <p class="tiny">Telemetry is for seeing both outcomes. Four calls wrote a draft invoice. One quoted and did not. Three transfers started; none recorded a connected call. Two transfer requests got no reply. Full reports: <code>telemetry/calls/&lt;callId&gt;/index.html</code>.</p>
       </div>
     </section>
 
@@ -442,12 +467,12 @@
       ["working", "List live inventory", "search_catalog reads Mongo. Recorded lists: biscuit, cooking oil, rice, sugar — with price, unit, and stock."],
       ["working", "Search and say no", "Name search. If the catalogue has no match — “bucket”, “candidacy” — Yuga says so. It does not invent a product."],
       ["working", "Check stock", "cb0a2a3f: caller asked for 20 rice. Stock was 5. Application code refused the extra 15 and offered a partial."],
-      ["working", "Quote from the database", "quote_order totals include tax. Spoken quotes on disk: ₹212.60, ₹233.60, ₹288.75. Tax can be read aloud."],
+      ["working", "Quote from the database", "quote_order totals include tax. Spoken quotes on disk: ₹42, ₹212.60, ₹233.60, ₹288.75. Tax can be read aloud."],
       ["working", "Build the basket", "Multi-product on 805a612e. Add-to-order on c6d71d7c: five sugar, then one biscuit, one running total."],
       ["working", "Wait for yes", "Confirm-then-commit. An invoice is written only after an explicit yes. Duplicates are blocked."],
-      ["working", "Draft an invoice", "INV-336D3A1F ₹212.60 · INV-48CFE293 ₹288.75 · INV-619363EE ₹233.60. Status UnPaid. No payment on the call."],
+      ["working", "Draft an invoice", "INV-336D3A1F ₹212.60 · INV-48CFE293 ₹288.75 · INV-619363EE ₹233.60 · INV-46A11B7F ₹42. Status UnPaid. No payment on the call."],
       ["working", "Clarify messy speech", "cb0a2a3f heard “eight twenty” and asked 8 or 20. c6d71d7c asked whether “pockets” meant packets, and of which product."],
-      ["partial", "Transfer to a human", "9329c0d7: “speak to a person” → confirm → “connecting you to support.” Dial then failed. Yuga does not claim someone answered."],
+      ["partial", "Transfer to a human", "“Speak with a human” → confirm → “connecting you to support.” 256f1e58: Exotel dialled support, no answer. a58c99ec: dialled, no connect status within 60 s. Yuga does not claim someone answered."],
       ["working", "End the call", "end_call on goodbye. Hang-up after a draft invoice. Spoken replies never include Mongo IDs."]
     ];
 

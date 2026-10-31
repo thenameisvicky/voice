@@ -4,7 +4,7 @@ import { TRANSFER_TOOL } from "./agentTools.js";
 import { STAGES } from "../../telemetry/config.js";
 import telemetry from "../../telemetry/telemetry.js";
 
-const AFFIRMATIVE = /\b(yes|yeah|yep|sure|okay|ok|confirm(ed)?|go ahead|place (the |my )?order|correct|that'?s right|do it)\b/i;
+const AFFIRMATIVE = /\b(yes|yeah|yep|ya|yup|haan|han|sure|okay|ok|alright|all right|fine|confirm(ed)?|go ahead|go on|carry on|proceed|place (the |my )?order|book it|correct|that'?s right|do it|please do|sounds good|perfect|absolutely|definitely|of course)\b/i;
 const NEGATIVE = /\b(no|not|don'?t|cancel|wait|stop|change)\b/i;
 const GOODBYE = /\b(bye|goodbye|good bye|good night|that's all|thats all|that is all|nothing else|i'?m done|hang up|end (the )?call)\b/i;
 
@@ -133,7 +133,7 @@ export class Reasoner {
         });
 
         const pending = this.memory.pendingAction;
-        this.memory.pendingAction = null;
+        this.memory.pendingAction = pending && !isAffirmative(text) && !NEGATIVE.test(text) ? pending : null;
 
         if (isGoodbye(text)) {
             await this.runTool("end_call", { reason: "goodbye" });
