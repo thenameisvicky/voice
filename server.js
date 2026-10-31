@@ -13,6 +13,7 @@ import {
     getInventoryItem,
     createInvoice
 } from "./src/LLM/reasoner/tools.js";
+import { INFERENCE_CONFIG, logInferenceConfig } from "./src/inference/config.js";
 
 const MONGO_URI = "mongodb+srv://vignesh:vicky123@wai-main.bfxxlrn.mongodb.net";
 const MONGO_DATABASE = "wai";
@@ -109,7 +110,14 @@ wss.on("connection", async (ws) => {
 
     const callId = `browser-${randomUUID().slice(0, 8)}`;
 
-    telemetry.startTrace(callId, { channel: "browser", from: "localhost" });
+    telemetry.startTrace(callId, {
+        channel: "browser",
+        from: "localhost",
+        inferenceMode: INFERENCE_CONFIG.mode,
+        llmProvider: INFERENCE_CONFIG.llm.provider,
+        asrProvider: INFERENCE_CONFIG.asr.provider,
+        ttsProvider: INFERENCE_CONFIG.tts.provider
+    });
 
     const { voice } = await Voice.createVoice({
         callId,
@@ -192,6 +200,8 @@ async function start() {
             publicTokenSecret: PUBLIC_TOKEN_SECRET
         });
     }
+
+    logInferenceConfig(INFERENCE_CONFIG);
 
     await telemetry.measureBaseline();
 

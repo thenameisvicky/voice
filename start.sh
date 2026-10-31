@@ -206,12 +206,16 @@ printf '    ASR  http://127.0.0.1:%s  (first run downloads nemotron-en to ~/.cac
 "$NEMO_BIN" serve --asr-model nemotron-en --host 127.0.0.1 --port "$ASR_PORT" &
 ASR_PID=$!
 
-printf '    LLM  http://127.0.0.1:%s\n' "$LLM_PORT"
-"$LLAMA_BIN" -t 2 --host 127.0.0.1 --port "$LLM_PORT" -m "$QWEN_GGUF" &
-LLM_PID=$!
-
 wait_http "http://127.0.0.1:$ASR_PORT/v1/models" "ASR" 300
-wait_http "http://127.0.0.1:$LLM_PORT/health" "LLM" 120
+
+if [ "${INFERENCE_MODE:-provider}" = "local" ]; then
+    printf '    LLM  http://127.0.0.1:%s\n' "$LLM_PORT"
+    "$LLAMA_BIN" -t 2 --host 127.0.0.1 --port "$LLM_PORT" -m "$QWEN_GGUF" &
+    LLM_PID=$!
+    wait_http "http://127.0.0.1:$LLM_PORT/health" "LLM" 120
+else
+    printf '    LLM  Groq hosted (%s)\n' "${LLM_MODEL:-openai/gpt-oss-120b}"
+fi
 
 printf '    app  http://127.0.0.1:%s\n' "$APP_PORT"
 node "$ROOT/server.js" &

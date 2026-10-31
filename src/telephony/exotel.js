@@ -1,5 +1,6 @@
 import { Voice } from "../voice/voice.js";
 import { lookupCustomer } from "../LLM/reasoner/agentTools.js";
+import { INFERENCE_CONFIG } from "../inference/config.js";
 import telemetry from "../telemetry/telemetry.js";
 import { QUEUE_SOURCES, STAGES } from "../telemetry/config.js";
 
@@ -174,7 +175,11 @@ export function handleExotelConnection(ws) {
             streamSid,
             sampleRate,
             customer: customer?.name ?? null,
-            customerId: customer?.id ?? null
+            customerId: customer?.id ?? null,
+            inferenceMode: INFERENCE_CONFIG.mode,
+            llmProvider: INFERENCE_CONFIG.llm.provider,
+            asrProvider: INFERENCE_CONFIG.asr.provider,
+            ttsProvider: INFERENCE_CONFIG.tts.provider
         });
 
         const pipeline = await Voice.createVoice({

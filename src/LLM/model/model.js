@@ -1,3 +1,12 @@
+function messageContent(message) {
+    const content = message?.content;
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+        return content.map((part) => part?.text ?? part?.content ?? "").join("");
+    }
+    return "";
+}
+
 export class Model {
 
     constructor({ runtime }) {
@@ -28,7 +37,7 @@ export class Model {
 
         return {
             type: "final",
-            content: message.content ?? ""
+            content: messageContent(message)
         };
     }
 }

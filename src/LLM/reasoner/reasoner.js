@@ -1,4 +1,5 @@
 import { CALL_OUTRO } from "../config.js";
+import { LlmProviderError } from "../runtime/runtime.js";
 import { STAGES } from "../../telemetry/config.js";
 import telemetry from "../../telemetry/telemetry.js";
 
@@ -16,8 +17,19 @@ const CONFIRM_REPLY =
 
 const INVOICE_OUTRO = "I've put a draft invoice on your account. Thank you, have a nice day.";
 
+const MONGO_OBJECT_ID = /\b[a-fA-F0-9]{24}\b/g;
+
 const isAffirmative = (text) => AFFIRMATIVE.test(text) && !NEGATIVE.test(text);
 const isGoodbye = (text) => GOODBYE.test(text);
+
+export function sanitizeSpokenText(text) {
+    return String(text || "")
+        .replace(/\p{Extended_Pictographic}|️/gu, "")
+        .replace(MONGO_OBJECT_ID, "")
+        .replace(/\s{2,}/g, " ")
+        .replace(/\s+([,.!?])/g, "$1")
+        .trim();
+}
 
 export class Reasoner {
     constructor({
@@ -50,13 +62,25 @@ export class Reasoner {
                 startedAt: Date.now(),
                 lastActivity: Date.now()
             },
-            pendingAction: null
+            pendingAction: null,
+            catalog: [],
+            order: {
+                customerId: customer?.id ?? null,
+                lines: [],
+                total_rupees: null,
+                status: "empty",
+                shortage: null
+            }
         };
         this.hangup = false;
         this.outro = null;
+        this.invoiceCommitted = false;
+        this.committedInvoice = null;
     }
 
     reply(content, hangup = this.hangup) {
+        content = sanitizeSpokenText(content);
+
         this.memory.messages.push({
             role: "assistant",
             content
@@ -81,6 +105,8 @@ export class Reasoner {
             await this.runTool("end_call", { reason: "goodbye" });
         } else if (pending && isAffirmative(text)) {
             await this.runTool(pending.tool, pending.args);
+        } else if (pending && NEGATIVE.test(text)) {
+            this.memory.order.status = "rejected";
         }
 
         if (this.hangup) {
@@ -89,7 +115,7 @@ export class Reasoner {
 
         for (let round = 0; round < this.maxToolRounds; round++) {
             const messages = [
-                { role: "system", content: this.systemPrompt },
+                { role: "system", content: `${this.systemPrompt}${this.orderContext()}` },
                 ...this.memory.messages.slice(-this.maxHistoryMessages)
             ];
 
@@ -108,6 +134,13 @@ export class Reasoner {
                 });
             } catch (error) {
                 telemetry.endSpan(this.memory.callId, STAGES.LLM, { error, round });
+                console.error(`[REASONER][LLM][ERROR] ${error.code || error.name}: ${error.message}`);
+                if (error instanceof LlmProviderError) {
+                    const spoken = error.code === "rate_limit"
+                        ? "The assistant is busy right now. Please try again in a moment."
+                        : "Sorry, I had trouble thinking just now. Please say that again.";
+                    return this.reply(spoken, false);
+                }
                 throw error;
             }
 
@@ -120,10 +153,7 @@ export class Reasoner {
             });
 
             if (response.type === "final") {
-                let content = (response.content ?? "")
-                    .replace(/\p{Extended_Pictographic}|️/gu, "")
-                    .replace(/\s{2,}/g, " ")
-                    .trim();
+                let content = sanitizeSpokenText(response.content ?? "");
 
                 if (this.confirmation && CLAIMS_ORDER.test(content)) {
                     const hasCommittedInvoice = this.memory.messages.some(
@@ -162,6 +192,25 @@ export class Reasoner {
         return this.reply("Sorry, I couldn't complete that request.", false);
     }
 
+    orderContext() {
+        const order = this.memory.order;
+        if (!order?.lines?.length && !order?.shortage) return "";
+
+        const lines = (order.lines || []).map((line) =>
+            `${line.name} x ${line.quantity}${line.partial ? " (partial)" : ""} [item_id ${line.item_id}]`
+        );
+        const parts = ["", "## Pending order"];
+        if (lines.length) parts.push(lines.join("; "));
+        if (order.total_rupees != null) parts.push(`Quoted total: ${order.total_rupees} rupees.`);
+        if (order.shortage) {
+            parts.push(
+                `Stock shortfall: ${order.shortage.name} requested ${order.shortage.requested}, available ${order.shortage.available} ${order.shortage.unit || ""}.`
+            );
+        }
+        parts.push(`Status: ${order.status}.`);
+        return `\n${parts.join("\n")}`;
+    }
+
     async runTool(name, args, response = null) {
         const id = response?.id ?? `call_${Date.now()}`;
         const raw = response?.raw ?? {
@@ -184,7 +233,15 @@ export class Reasoner {
 
         let result;
 
-        if (args === null) {
+        if (this.confirmation && name === this.confirmation.commitTool && this.invoiceCommitted) {
+            result = {
+                ok: true,
+                duplicate: true,
+                invoice_number: this.committedInvoice?.invoice_number ?? null,
+                total_rupees: this.committedInvoice?.total_rupees ?? null,
+                status: this.committedInvoice?.status ?? null
+            };
+        } else if (args === null) {
             result = { ok: false, error: "Tool arguments were not valid JSON." };
         } else if (!this.executeTool) {
             result = { ok: false, error: `Unknown tool ${name}` };
@@ -210,7 +267,7 @@ export class Reasoner {
             console.log(`[REASONER][TOOL][RESULT] - ${name} ${JSON.stringify(result)}`);
         }
 
-        if (this.confirmation && name === this.confirmation.commitTool) {
+        if (this.confirmation && name === this.confirmation.commitTool && !result?.duplicate) {
             telemetry.recordBusinessAction(callId, name, {
                 ok: result?.ok === true,
                 invoiceNumber: result?.invoice_number ?? null,
@@ -219,6 +276,9 @@ export class Reasoner {
             });
 
             if (result?.ok === true) {
+                this.invoiceCommitted = true;
+                this.committedInvoice = result;
+                this.memory.order.status = "committed";
                 this.hangup = true;
                 this.outro = INVOICE_OUTRO;
             }
@@ -236,11 +296,38 @@ export class Reasoner {
             content: JSON.stringify(result)
         });
 
-        if (this.confirmation && name === this.confirmation.quoteTool && result?.ok) {
-            this.memory.pendingAction = {
-                tool: this.confirmation.commitTool,
-                args: this.confirmation.commitArgs(args)
-            };
+        if (name === "search_catalog" && result?.ok && Array.isArray(result.items)) {
+            this.memory.catalog = result.items;
+        }
+
+        if (name === this.confirmation?.quoteTool) {
+            if (result?.ok) {
+                this.memory.order = {
+                    ...this.memory.order,
+                    lines: result.items || [],
+                    total_rupees: result.total_rupees ?? null,
+                    status: "quoted",
+                    shortage: null
+                };
+                this.memory.pendingAction = {
+                    tool: this.confirmation.commitTool,
+                    args: this.confirmation.commitArgs(args, result)
+                };
+            } else if (result?.code === "insufficient_stock") {
+                this.memory.order = {
+                    ...this.memory.order,
+                    lines: result.items || this.memory.order.lines,
+                    status: "shortage",
+                    shortage: result.shortage || null
+                };
+                telemetry.recordBusinessAction(callId, "stockout", {
+                    ok: false,
+                    product: result.shortage?.name ?? null,
+                    requested: result.shortage?.requested ?? null,
+                    available: result.shortage?.available ?? null,
+                    alternatives: (result.alternatives || []).map((item) => item.name)
+                });
+            }
         }
 
         return result;

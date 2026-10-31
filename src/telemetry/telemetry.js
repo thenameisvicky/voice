@@ -265,7 +265,10 @@ export class Telemetry {
             model,
             promptTokens: Number(usage.promptTokens ?? 0),
             completionTokens: Number(usage.completionTokens ?? 0),
-            audioMs: usage.audioMs ?? null
+            audioMs: usage.audioMs ?? null,
+            durationMs: usage.durationMs ?? null,
+            ttftMs: usage.ttftMs ?? null,
+            retries: Number(usage.retries ?? 0)
         };
 
         record.totalTokens = record.promptTokens + record.completionTokens;

@@ -1,4 +1,5 @@
-import { LLM_CONFIG, buildSystemPrompt } from "../LLM/config.js";
+import { buildSystemPrompt } from "../LLM/config.js";
+import { INFERENCE_CONFIG } from "../inference/config.js";
 import { Model } from "../LLM/model/model.js";
 import { Reasoner } from "../LLM/reasoner/reasoner.js";
 import { TOOL_DEFINITIONS, ORDER_CONFIRMATION, createToolExecutor } from "../LLM/reasoner/agentTools.js";
@@ -213,25 +214,34 @@ export class Voice {
         const vad = new VADInference();
         const endpointer = new Endpointer(SST_CONFIG);
         const utteranceBuffer = new UtteranceBuffer();
-        const batchTranscriber = new BatchTranscriber({ url: "http://127.0.0.1:8080/v1/audio/transcriptions" });
+        const llm = INFERENCE_CONFIG.llm;
+        const batchTranscriber = new BatchTranscriber({ url: INFERENCE_CONFIG.asr.url });
         const streamTranscriber = new StreamTranscriber(batchTranscriber);
         const synthesizer = { synthesize };
         const runtime = new Runtime({
-            url: LLM_CONFIG.url,
-            model: LLM_CONFIG.model,
-            temperature: LLM_CONFIG.temperature,
-            maxTokens: LLM_CONFIG.maxTokens,
-            frequencyPenalty: LLM_CONFIG.frequencyPenalty,
-            presencePenalty: LLM_CONFIG.presencePenalty
+            url: llm.url,
+            model: llm.model,
+            apiKey: llm.apiKey || undefined,
+            timeoutMs: llm.timeoutMs,
+            retryMax: llm.retryMax,
+            temperature: llm.temperature,
+            maxTokens: llm.maxTokens,
+            frequencyPenalty: llm.frequencyPenalty,
+            presencePenalty: llm.presencePenalty,
+            localCompat: llm.localCompat,
+            reasoningEffort: llm.reasoningEffort
         });
+        if (INFERENCE_CONFIG.mode === "provider" && !runtime.apiKey) {
+            console.error("[LLM] No API key. Set GROQ_API_KEY or LLM_API_KEY before starting the server.");
+        }
         const model = new Model({ runtime });
         const reasoner = new Reasoner({
             model,
             systemPrompt: buildSystemPrompt({ customer }),
-            maxHistoryMessages: LLM_CONFIG.maxHistoryMessages,
+            maxHistoryMessages: llm.maxHistoryMessages,
             tools: TOOL_DEFINITIONS,
             executeTool: createToolExecutor({ customer }),
-            maxToolRounds: LLM_CONFIG.maxToolRounds,
+            maxToolRounds: llm.maxToolRounds,
             confirmation: ORDER_CONFIRMATION,
             customer,
             callId

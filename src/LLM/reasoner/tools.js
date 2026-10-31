@@ -78,9 +78,9 @@ function serializeCustomer(customer) {
     });
 }
 
-async function createCustomerFromIncomingNumber(incomingNumber) {
-    const database = requireDb();
-    const companyId = requireCompanyId();
+async function createCustomerFromIncomingNumber(incomingNumber, extras = {}) {
+    const database = extras.database || requireDb();
+    const companyId = extras.companyId || requireCompanyId();
     const phone = normalizeIndianPhone(incomingNumber);
     const now = nowUtc();
     const customer = {
@@ -343,9 +343,9 @@ export async function closeTools() {
     }
 }
 
-export async function getCustomerProfile(incomingNumber) {
-    const database = requireDb();
-    const companyId = requireCompanyId();
+export async function getCustomerProfile(incomingNumber, extras = {}) {
+    const database = extras.database || requireDb();
+    const companyId = extras.companyId || requireCompanyId();
     const variants = phoneVariants(incomingNumber);
 
     if (variants.length === 0) {
@@ -362,7 +362,7 @@ export async function getCustomerProfile(incomingNumber) {
     });
 
     if (!customer) {
-        customer = await createCustomerFromIncomingNumber(incomingNumber);
+        customer = await createCustomerFromIncomingNumber(incomingNumber, { database, companyId });
         return {
             status: "success",
             created: true,
