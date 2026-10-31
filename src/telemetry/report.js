@@ -19,6 +19,8 @@ import {
     legend,
     lineChart,
     money,
+    moneyAmount,
+    costStatusPill,
     ms,
     num,
     page,
@@ -73,7 +75,10 @@ const BENCHMARK_ROWS = [
     },
     {
         label: "Cost per completed call",
-        render: (level) => money(level.costPerCompletedCall, symbol)
+        render: (level) => money(level.costPerCompletedCall, symbol),
+        note: (level) => level.costPerCompletedCall == null
+            ? "needs a successful business action"
+            : ""
     }
 ];
 
@@ -440,7 +445,9 @@ function callSection(callStats) {
                 : `<span class="pill">no action</span>`,
             call.errors.length > 0
                 ? `<span class="fail">${int(call.errors.length)}</span>`
-                : `<span class="good">0</span>`
+                : `<span class="good">0</span>`,
+            `${moneyAmount(call.accounting?.estimated_total_cost ?? call.accounting?.estimated_telephony_cost, symbol)}
+             ${costStatusPill(call.accounting?.telephony_cost_status)}`
         ]);
 
     return `<section id="calls" class="section">
@@ -451,9 +458,9 @@ function callSection(callStats) {
             invoice created, not merely quoted. Open any call for its own report.`
     })}
     ${table({
-        columns: ["Call", "Started", "In flight", "Duration", "Turns", "p95 turn", "CPU", "Outcome", "Errors"],
+        columns: ["Call", "Started", "In flight", "Duration", "Turns", "p95 turn", "CPU", "Outcome", "Errors", "Call cost"],
         rows,
-        align: ["", "", "r", "r", "r", "r", "r", "", "r"]
+        align: ["", "", "r", "r", "r", "r", "r", "", "r", "r"]
     })}
   </section>`;
 }
@@ -481,7 +488,8 @@ function assumptionsSection(analysis) {
         ["Written down over", `${COST_MODEL.hardwareLifetimeMonths} months`],
         ["Power under load", `${COST_MODEL.machineWatts} W`],
         ["Electricity tariff", `${money(COST_MODEL.electricityPerKwh, symbol)} / kWh`],
-        ["Telephony", `${money(COST_MODEL.telephonyPerMinute, symbol)} / minute`],
+        ["Modelled telephony (unit economics only)", `${money(COST_MODEL.telephonyPerMinute, symbol)} / minute`],
+        ["Exotel tariff", "Set EXOTEL_TARIFF_INBOUND_PAISE_PER_MINUTE; missing tariff is unavailable, never ₹0"],
         ["Managed vendor", `${money(COST_MODEL.managedVoiceAiPerMinute, symbol)} / minute`],
         ["CPU ceiling", pct(COST_MODEL.utilizationTarget * 100, 0)],
         ["Memory ceiling", pct(COST_MODEL.memoryTarget * 100, 0)]
@@ -539,6 +547,105 @@ function hostLine(host) {
     return `${host.cpuModel} · ${host.cores} cores · ${bytes(host.systemTotalBytes)}`;
 }
 
+function spendSection(spend) {
+    if (!spend || spend.calls === 0) {
+        return `<section id="spend" class="section">
+      ${sectionHead({
+            eyebrow: "Call cost accounting",
+            title: "Telephony and inference spend.",
+            lead: "Costs appear after a call ends. A missing Exotel tariff is shown as unavailable, not ₹0."
+        })}
+      <p class="empty">No call costs recorded yet.</p>
+    </section>`;
+    }
+
+    return `<section id="spend" class="section">
+    ${sectionHead({
+        eyebrow: "Call cost accounting",
+        title: "What the recorded calls actually spent.",
+        lead: `Unsuccessful calls stay in infrastructure spend. Cost per successful business
+            action divides that whole spend by completed actions, so a failed invoice still
+            counts on the telephony bill. Amounts are INR. Estimated stays estimated until
+            Exotel billing is imported.`
+    })}
+    <div class="answers">
+      ${answerCard({
+            number: "T",
+            question: "Total telephony spend",
+            headline: moneyAmount(spend.total_telephony_spend, symbol),
+            unit: spend.currency,
+            note: "Uses actual Exotel charges when reconciled, otherwise the configured tariff estimate."
+        })}
+      ${answerCard({
+            number: "I",
+            question: "Total inference spend",
+            headline: moneyAmount(spend.total_inference_spend, symbol),
+            unit: spend.currency,
+            note: "ASR + LLM + TTS from configured per-unit rates. Unconfigured rates stay unavailable."
+        })}
+      ${answerCard({
+            number: "A",
+            question: "Average cost per call",
+            headline: moneyAmount(spend.average_cost_per_call, symbol),
+            unit: `across ${int(spend.calls)} calls`,
+            note: "Every recorded call is included, including those that created no invoice."
+        })}
+      ${answerCard({
+            number: "B",
+            question: "Average cost per successful business action",
+            headline: moneyAmount(spend.average_cost_per_successful_business_action, symbol),
+            unit: spend.successfulBusinessActions > 0
+                ? `${int(spend.successfulBusinessActions)} successful actions`
+                : "no successful action yet",
+            note: "Unavailable until at least one business action succeeds. Failed calls remain in the numerator."
+        })}
+    </div>
+    <div style="height:16px"></div>
+    ${table({
+        columns: ["Metric", "Amount", "Status"],
+        rows: [
+            ["Cost per connected minute", moneyAmount(spend.cost_per_connected_minute, symbol), "from connected duration"],
+            ["Actual total spend", moneyAmount(spend.actual_total_spend, symbol), spend.actual_total_spend ? "reconciled only" : "pending actual billing"]
+        ],
+        align: ["", "r", ""]
+    })}
+  </section>`;
+}
+
+function callCostSection(detail, spend) {
+    const cost = detail.accounting ?? {};
+    const telephony = detail.telephony ?? {};
+    const compared = cost.actual_telephony_cost && cost.estimated_telephony_cost
+        ? `${moneyAmount(cost.estimated_telephony_cost, symbol)} estimated vs ${moneyAmount(cost.actual_telephony_cost, symbol)} actual`
+        : "Actual billing has not been imported for this call.";
+
+    return `<section id="cost" class="section">
+    ${sectionHead({
+        eyebrow: "Call cost",
+        title: "Telephony, inference, and the total for this call.",
+        lead: `Currency ${esc(cost.currency || "INR")}.
+            ${costStatusPill(cost.telephony_cost_status)}
+            Duration source: ${esc(telephony.durationSource || "not recorded")}.
+            A connected call is not a successful business action.`
+    })}
+    ${table({
+        columns: ["Item", "Amount", "Notes"],
+        rows: [
+            ["Telephony", moneyAmount(cost.actual_telephony_cost ?? cost.estimated_telephony_cost, symbol), cost.telephony_cost_status === "actual" ? "actual" : (cost.estimated_telephony_cost ? "estimated" : "unavailable")],
+            ["Inference", moneyAmount(cost.inference_cost, symbol), `ASR ${moneyAmount(cost.asr_cost, symbol)} · LLM ${moneyAmount(cost.llm_cost, symbol)} · TTS ${moneyAmount(cost.tts_cost, symbol)}`],
+            ["Estimated total", moneyAmount(cost.estimated_total_cost, symbol), "telephony estimate + inference"],
+            ["Actual total", moneyAmount(cost.actual_total_cost, symbol), cost.actual_total_cost ? "actual telephony + inference" : "not labelled actual until telephony is reconciled"],
+            ["Cost per connected minute", moneyAmount(spend?.cost_per_connected_minute, symbol), telephony.connectedDurationSeconds != null ? `${int(telephony.connectedDurationSeconds)} s connected` : "duration pending"],
+            ["Cost per successful business action", moneyAmount(spend?.average_cost_per_successful_business_action, symbol), detail.completed ? "this call completed an action" : "this call did not complete an action"],
+            ["Estimated vs actual", compared, telephony.reconciliation
+                ? `${esc(telephony.reconciliation.source)} at ${esc(clock(telephony.reconciliation.at))}`
+                : "estimate retained"]
+        ],
+        align: ["", "r", ""]
+    })}
+  </section>`;
+}
+
 function overviewHtml(analysis) {
     const { compute, concurrency, cost } = analysis.answers;
     const bench = analysis.benchmark;
@@ -546,7 +653,7 @@ function overviewHtml(analysis) {
     const body = `  <section class="hero">
     <h1>What a voice call <span class="accent">actually costs</span> to run.</h1>
     <p class="lead">
-      Kural instruments every stage of the pipeline &mdash; voice activity detection, speech
+      Yuga instruments every stage of the pipeline &mdash; voice activity detection, speech
       recognition, the language model, tool calls and speech synthesis &mdash; at three levels:
       per inference, per turn and per call. This page is regenerated after every call.
     </p>
@@ -588,6 +695,7 @@ function overviewHtml(analysis) {
     ])}
 
   ${benchmarkSection(bench)}
+  ${spendSection(analysis.spend)}
   ${answersSection(analysis)}
   ${inferenceSection(analysis.inference)}
   ${turnSection(analysis.turn)}
@@ -595,10 +703,11 @@ function overviewHtml(analysis) {
   ${assumptionsSection(analysis)}`;
 
     return page({
-        title: "Kural telemetry",
-        description: "Measured compute, latency, concurrency and cost for the Kural voice pipeline.",
+        title: "Yuga telemetry",
+        description: "Measured compute, latency, concurrency and cost for the Yuga voice pipeline.",
         navLinks: [
             { href: "#benchmark", label: "Benchmark" },
+            { href: "#spend", label: "Call cost" },
             { href: "#answers", label: "Overview" },
             { href: "#inference", label: "Per inference" },
             { href: "#turns", label: "Per turn" },
@@ -707,7 +816,21 @@ function callHtml(analysis) {
     const rows = BENCHMARK_ROWS.map((row) => [
         `<strong>${esc(row.label)}</strong>`,
         row.render(level),
-        row.note ? `<span class="quiet">${row.note(level)}</span>` : ""
+        row.note?.(level) ? `<span class="quiet">${row.note(level)}</span>` : ""
+    ]);
+
+    const accounted = detail.costPerCall;
+    const modeled = detail.modeledCallCost;
+    rows.push([
+        `<strong>Cost per call</strong>`,
+        accounted
+            ? moneyAmount(accounted, symbol)
+            : money(modeled?.perCall, symbol),
+        `<span class="quiet">${accounted
+            ? esc(detail.accounting?.telephony_cost_status || "estimated")
+            : detail.completed
+                ? "modelled box + assumed telephony"
+                : "this call still costs money; completed-call cost stays blank without an invoice"}</span>`
     ]);
 
     const body = `  <section class="hero">
@@ -727,6 +850,9 @@ function callHtml(analysis) {
             : `<span class="pill">unverified caller</span>`}
       <span class="pill">peak ${int(detail.peakConcurrency)} in flight</span>
       <span class="pill ${detail.completed ? "pill-ok" : ""}">${detail.completed ? "completed" : "no action"}</span>
+      ${detail.transfer
+            ? `<span class="pill ${detail.transfer.status === "connected" ? "pill-ok" : "pill-warn"}">transfer ${esc(detail.transfer.status)}${detail.transfer.department ? ` ${esc(detail.transfer.department)}` : ""}</span>`
+            : ""}
       <a class="link" href="../../index.html">&larr; All calls</a>
     </div>
   </section>
@@ -746,6 +872,8 @@ function callHtml(analysis) {
         align: ["", "r", ""]
     })}
   </section>
+
+  ${callCostSection(detail, analysis.spend)}
 
   <section id="turns" class="section">
     ${sectionHead({
@@ -769,10 +897,11 @@ function callHtml(analysis) {
   </section>`;
 
     return page({
-        title: `Call ${detail.callId} — Kural telemetry`,
+        title: `Call ${detail.callId} — Yuga telemetry`,
         description: `Telemetry for call ${detail.callId}: ${detail.turnCount} turns, ${num(detail.cpuSeconds, 2)} CPU-seconds.`,
         navLinks: [
             { href: "#metrics", label: "Benchmark" },
+            { href: "#cost", label: "Call cost" },
             { href: "#turns", label: "Turns" },
             { href: "#resources", label: "Resources" },
             { href: "../../index.html", label: "All calls" }

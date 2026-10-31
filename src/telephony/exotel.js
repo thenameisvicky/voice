@@ -3,6 +3,7 @@ import { lookupCustomer } from "../LLM/reasoner/agentTools.js";
 import { INFERENCE_CONFIG } from "../inference/config.js";
 import telemetry from "../telemetry/telemetry.js";
 import { QUEUE_SOURCES, STAGES } from "../telemetry/config.js";
+import { transfers } from "./callTransfer.js";
 
 export function wavToPcm16(wav) {
     if (wav.toString("ascii", 0, 4) !== "RIFF" || wav.toString("ascii", 8, 12) !== "WAVE") {
@@ -159,7 +160,7 @@ export function handleExotelConnection(ws) {
         console.log(`[EXOTEL] Sent ${(pcm.length / sampleRate).toFixed(2)}s audio (turn ${turn}${hangupAfter ? ", then hangup" : ""})`);
     };
 
-    const start = async ({ callSid, from }) => {
+    const start = async ({ callSid, from, to, accountSid }) => {
         const customer = await lookupCustomer(from).catch((error) => {
             console.error("[EXOTEL] Customer lookup failed:", error);
             return null;
@@ -172,8 +173,12 @@ export function handleExotelConnection(ws) {
         telemetry.startTrace(callId, {
             channel: "exotel",
             from,
+            to,
             streamSid,
             sampleRate,
+            direction: "inbound",
+            exotelCallSid: callSid,
+            accountSid,
             customer: customer?.name ?? null,
             customerId: customer?.id ?? null,
             inferenceMode: INFERENCE_CONFIG.mode,
@@ -182,6 +187,7 @@ export function handleExotelConnection(ws) {
             ttsProvider: INFERENCE_CONFIG.tts.provider
         });
 
+        const transferContext = transfers.onVoicebotStart(callSid);
         const pipeline = await Voice.createVoice({
             onEvent: (event) => {
                 if (event.type === "transcript" || event.type === "response") {
@@ -195,12 +201,15 @@ export function handleExotelConnection(ws) {
                 hangupTimer = setTimeout(hangup, waitMs);
             },
             customer,
-            callId: callSid
+            callId: callSid,
+            channel: "exotel",
+            transferContext
         });
 
-        const greetingText = customer?.name
-            ? `Hello ${customer.name}, this is Yuga. How can I help you today?`
-            : "Hello, this is Yuga. How can I help you today?";
+        const greetingText = transferContext?.speakOnReturn
+            || (customer?.name
+                ? `Hello ${customer.name}, this is Yuga. How can I help you today?`
+                : "Hello, this is Yuga. How can I help you today?");
 
         telemetry.startSpan(callId, STAGES.TTS, { chars: greetingText.length, greeting: true });
         const greeting = await pipeline.synthesizer.synthesize(greetingText, { language: "en" });
@@ -245,7 +254,9 @@ export function handleExotelConnection(ws) {
 
                 voiceReady = start({
                     callSid: callId,
-                    from: message.start?.from
+                    from: message.start?.from,
+                    to: message.start?.to ?? null,
+                    accountSid: message.start?.account_sid ?? null
                 });
                 voiceReady.catch((error) => {
                     console.error("[EXOTEL] Pipeline init failed:", error);
@@ -290,6 +301,14 @@ export function handleExotelConnection(ws) {
 
             case "stop":
                 console.log(`[EXOTEL] Stop (${message.stop?.reason})`);
+                if (callId && !transfers.shouldKeepTrace(callId) && !transfers.isInProgress(callId)) {
+                    telemetry.applyTelephonyUpdate(callId, {
+                        callSid: callId,
+                        status: message.stop?.reason || "completed",
+                        endedAt: Date.now(),
+                        source: "exotel-stream-stop"
+                    });
+                }
                 ws.close();
                 break;
         }
@@ -301,6 +320,10 @@ export function handleExotelConnection(ws) {
             hangupTimer = null;
         }
         if (!callId) return;
+        if (transfers.shouldKeepTrace(callId)) {
+            console.log(`[EXOTEL] Keeping telemetry open for transfer ${callId}`);
+            return;
+        }
         telemetry.endTrace(callId);
         callId = null;
     };

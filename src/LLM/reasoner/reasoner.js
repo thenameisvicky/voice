@@ -1,5 +1,6 @@
 import { CALL_OUTRO } from "../config.js";
 import { LlmProviderError } from "../runtime/runtime.js";
+import { TRANSFER_TOOL } from "./agentTools.js";
 import { STAGES } from "../../telemetry/config.js";
 import telemetry from "../../telemetry/telemetry.js";
 
@@ -8,6 +9,13 @@ const NEGATIVE = /\b(no|not|don'?t|cancel|wait|stop|change)\b/i;
 const GOODBYE = /\b(bye|goodbye|good bye|good night|that's all|thats all|that is all|nothing else|i'?m done|hang up|end (the )?call)\b/i;
 
 const CLAIMS_ORDER = /\b(invoice|order (is |has been )?(placed|confirmed|created)|placed your order)\b/i;
+const CLAIMS_TRANSFER = /\b(transferred you|you're (now )?connected|you are (now )?connected|speaking (to|with) (a |the )?(human|agent)|i('ve| have) (connected|transferred))\b/i;
+
+const TRANSFER_NOT_STARTED_REPLY =
+    "I haven't transferred the call yet. I can connect you to a team if you want.";
+
+const TRANSFER_CONFIRM_REPLY =
+    "I can transfer you. Please say yes to confirm.";
 
 const NOT_PLACED_REPLY =
     "I haven't placed the order yet. Tell me what you'd like and I'll read you the total first.";
@@ -26,6 +34,12 @@ export function sanitizeSpokenText(text) {
     return String(text || "")
         .replace(/\p{Extended_Pictographic}|️/gu, "")
         .replace(MONGO_OBJECT_ID, "")
+        .replace(/\*\*([^*]+)\*\*/g, "$1")
+        .replace(/\*([^*]+)\*/g, "$1")
+        .replace(/__([^_]+)__/g, "$1")
+        .replace(/`+/g, "")
+        .replace(/^\s*[-•]\s+/gm, "")
+        .replace(/\*/g, "")
         .replace(/\s{2,}/g, " ")
         .replace(/\s+([,.!?])/g, "$1")
         .trim();
@@ -41,7 +55,8 @@ export class Reasoner {
         maxToolRounds = 4,
         confirmation = null,
         customer = null,
-        callId = null
+        callId = null,
+        transferContext = null
     }) {
         this.model = model;
         this.systemPrompt = systemPrompt;
@@ -64,6 +79,19 @@ export class Reasoner {
             },
             pendingAction: null,
             catalog: [],
+            transfer: transferContext
+                ? {
+                    status: transferContext.status,
+                    department: transferContext.department ?? null,
+                    label: transferContext.label ?? null,
+                    reason: transferContext.reason ?? null
+                }
+                : {
+                    status: "none",
+                    department: null,
+                    label: null,
+                    reason: null
+                },
             order: {
                 customerId: customer?.id ?? null,
                 lines: [],
@@ -73,6 +101,8 @@ export class Reasoner {
             }
         };
         this.hangup = false;
+        this.hangupReason = null;
+        this.confirmedTransfer = false;
         this.outro = null;
         this.invoiceCommitted = false;
         this.committedInvoice = null;
@@ -87,7 +117,11 @@ export class Reasoner {
         });
 
         console.log(`[REASONER][LLM] - ${content}`);
-        return { content, hangup: Boolean(hangup) };
+        return {
+            content,
+            hangup: Boolean(hangup),
+            hangupReason: hangup ? this.hangupReason : null
+        };
     }
 
     async reason(text) {
@@ -104,9 +138,13 @@ export class Reasoner {
         if (isGoodbye(text)) {
             await this.runTool("end_call", { reason: "goodbye" });
         } else if (pending && isAffirmative(text)) {
+            this.confirmedTransfer = pending.tool === TRANSFER_TOOL;
             await this.runTool(pending.tool, pending.args);
+            this.confirmedTransfer = false;
         } else if (pending && NEGATIVE.test(text)) {
-            this.memory.order.status = "rejected";
+            if (pending.tool === this.confirmation?.commitTool) {
+                this.memory.order.status = "rejected";
+            }
         }
 
         if (this.hangup) {
@@ -138,7 +176,9 @@ export class Reasoner {
                 if (error instanceof LlmProviderError) {
                     const spoken = error.code === "rate_limit"
                         ? "The assistant is busy right now. Please try again in a moment."
-                        : "Sorry, I had trouble thinking just now. Please say that again.";
+                        : error.code === "model_unavailable"
+                            ? "The assistant model is unavailable right now. Please try again."
+                            : "Sorry, I had trouble thinking just now. Please say that again.";
                     return this.reply(spoken, false);
                 }
                 throw error;
@@ -154,6 +194,13 @@ export class Reasoner {
 
             if (response.type === "final") {
                 let content = sanitizeSpokenText(response.content ?? "");
+
+                if (CLAIMS_TRANSFER.test(content) && this.memory.transfer?.status !== "connected") {
+                    console.warn(`[REASONER][GUARD] - Blocked unverified transfer claim: ${content}`);
+                    content = this.memory.pendingAction?.tool === TRANSFER_TOOL
+                        ? TRANSFER_CONFIRM_REPLY
+                        : TRANSFER_NOT_STARTED_REPLY;
+                }
 
                 if (this.confirmation && CLAIMS_ORDER.test(content)) {
                     const hasCommittedInvoice = this.memory.messages.some(
@@ -194,7 +241,8 @@ export class Reasoner {
 
     orderContext() {
         const order = this.memory.order;
-        if (!order?.lines?.length && !order?.shortage) return "";
+        const transfer = this.transferContext();
+        if (!order?.lines?.length && !order?.shortage) return transfer;
 
         const lines = (order.lines || []).map((line) =>
             `${line.name} x ${line.quantity}${line.partial ? " (partial)" : ""} [item_id ${line.item_id}]`
@@ -208,7 +256,49 @@ export class Reasoner {
             );
         }
         parts.push(`Status: ${order.status}.`);
+        return `\n${parts.join("\n")}${transfer}`;
+    }
+
+    transferContext() {
+        const transfer = this.memory.transfer;
+        if (!transfer || transfer.status === "none") return "";
+
+        const parts = ["", "## Transfer"];
+        if (transfer.label || transfer.department) {
+            parts.push(`Department: ${transfer.label || transfer.department}.`);
+        }
+        parts.push(`Status: ${transfer.status}.`);
+        if (transfer.reason) parts.push(`Reason: ${transfer.reason}.`);
+        if (transfer.status === "initiated" || transfer.status === "connecting") {
+            parts.push("The transfer has only been requested. Do not say the caller is already connected.");
+        }
+        if (transfer.status === "failed" || transfer.status === "timeout") {
+            parts.push("The previous transfer did not connect. Keep helping the caller here.");
+        }
         return `\n${parts.join("\n")}`;
+    }
+
+    conversationSummary(explicit) {
+        const bits = [];
+        if (this.memory.customer?.name) bits.push(`Customer ${this.memory.customer.name}.`);
+
+        const lines = this.memory.order?.lines || [];
+        if (lines.length) {
+            bits.push(
+                `Pending order: ${lines.map((line) => `${line.name} x ${line.quantity}`).join(", ")}` +
+                (this.memory.order.total_rupees != null ? `, ${this.memory.order.total_rupees} rupees.` : ".")
+            );
+        }
+
+        const recent = this.memory.messages
+            .filter((message) => message.role === "user" && message.content)
+            .slice(-3)
+            .map((message) => message.content)
+            .join(" ");
+        if (recent) bits.push(`Recent request: ${recent}`);
+        if (explicit) bits.push(String(explicit));
+
+        return bits.join(" ").replace(/\s+/g, " ").trim().slice(0, 320);
     }
 
     async runTool(name, args, response = null) {
@@ -251,7 +341,16 @@ export class Reasoner {
             telemetry.startSpan(callId, STAGES.TOOL, { name });
 
             try {
-                result = await this.executeTool(name, args);
+                const safeArgs = name === TRANSFER_TOOL
+                    ? {
+                        department: args?.department,
+                        reason: args?.reason,
+                        summary: this.conversationSummary(args?.summary)
+                    }
+                    : args;
+                result = await this.executeTool(name, safeArgs, {
+                    confirmed: name === TRANSFER_TOOL ? this.confirmedTransfer === true : undefined
+                });
             } catch (error) {
                 console.error(`[REASONER][TOOL][ERROR] - ${name}`, error);
                 result = { ok: false, error: "The tool failed. Try again later." };
@@ -280,13 +379,51 @@ export class Reasoner {
                 this.committedInvoice = result;
                 this.memory.order.status = "committed";
                 this.hangup = true;
+                this.hangupReason = "goodbye";
                 this.outro = INVOICE_OUTRO;
             }
         }
 
         if (name === "end_call" && result?.ok === true) {
             this.hangup = true;
+            this.hangupReason = "goodbye";
             this.outro = result.message || CALL_OUTRO;
+        }
+
+        if (name === TRANSFER_TOOL) {
+            if (result?.needs_confirmation) {
+                this.memory.transfer = {
+                    status: "needs_confirmation",
+                    department: result.department,
+                    label: result.label,
+                    reason: null
+                };
+                this.memory.pendingAction = {
+                    tool: TRANSFER_TOOL,
+                    args: {
+                        department: result.department,
+                        reason: result.reason ?? args?.reason,
+                        summary: args?.summary
+                    }
+                };
+            } else if (result?.status === "initiated") {
+                this.memory.transfer = {
+                    status: "initiated",
+                    department: result.department,
+                    label: result.label,
+                    reason: null
+                };
+                this.hangup = true;
+                this.hangupReason = "transfer";
+                this.outro = result.message || "I'm connecting you now.";
+            } else if (result?.ok === false) {
+                this.memory.transfer = {
+                    status: result.code || "failed",
+                    department: result.department ?? this.memory.transfer.department,
+                    label: result.label ?? this.memory.transfer.label,
+                    reason: result.error ?? null
+                };
+            }
         }
 
         this.memory.messages.push({

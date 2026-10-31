@@ -1,6 +1,6 @@
 import { getStrategy } from "../strategy/index.js";
 
-function toWavBuffer(audio) {
+export function toWavBuffer(audio) {
     const samples = audio.audio;
     const sampleRate = audio.sampling_rate;
 

@@ -1,3 +1,4 @@
+import { isFreeOpenRouterModel } from "../config.js";
 import { QUEUE_SOURCES, STAGES } from "../../telemetry/config.js";
 import telemetry from "../../telemetry/telemetry.js";
 
@@ -22,11 +23,60 @@ function retryAfterMs(response) {
     return Number.isFinite(dateMs) ? Math.max(0, dateMs - Date.now()) : 400;
 }
 
+function backoffMs(error, attempt) {
+    const base = error.retryAfterMs ?? 400 * (2 ** attempt);
+    return base + Math.floor(Math.random() * 200);
+}
+
+function normalizeMessages(messages, sendTools) {
+    if (sendTools) return messages;
+
+    return messages.map((message) => {
+        if (message.role === "tool") {
+            return {
+                role: "user",
+                content: `Tool ${message.name || "result"}: ${message.content || ""}`
+            };
+        }
+
+        if (message.role === "assistant" && message.tool_calls) {
+            const name = message.tool_calls[0]?.function?.name;
+            return {
+                role: "assistant",
+                content: message.content || (name ? `Calling ${name}` : "")
+            };
+        }
+
+        return {
+            role: message.role,
+            content: typeof message.content === "string" ? message.content : ""
+        };
+    });
+}
+
+function classifyHttpError(status, errorText) {
+    if (status === 429) return "rate_limit";
+    if (status === 401 || status === 403) return "auth";
+    if (status === 404 || /model.*(not found|unavailable|does not exist|invalid)/i.test(errorText || "")) {
+        return "model_unavailable";
+    }
+    return "provider";
+}
+
+function readErrorText(data, fallback) {
+    const message = data?.error?.message || data?.error?.code || fallback || "";
+    const raw = data?.error?.metadata?.raw;
+    return raw && typeof raw === "string" && raw !== message ? `${message} (${raw})` : message;
+}
+
 export class Runtime {
     constructor({
         url,
         model,
         apiKey = "",
+        fallbackModels = [],
+        extraHeaders = {},
+        sendTools = true,
         timeoutMs = 30000,
         retryMax = 1,
         temperature = 0.7,
@@ -35,11 +85,15 @@ export class Runtime {
         presencePenalty = 0,
         localCompat = false,
         reasoningEffort = "",
+        provider = "local",
         fetchImpl = fetch
     }) {
         this.url = url;
         this.model = model;
+        this.fallbackModels = Array.isArray(fallbackModels) ? fallbackModels : [];
         this.apiKey = apiKey;
+        this.extraHeaders = extraHeaders && typeof extraHeaders === "object" ? extraHeaders : {};
+        this.sendTools = sendTools !== false;
         this.timeoutMs = timeoutMs;
         this.retryMax = Math.max(0, Number(retryMax) || 0);
         this.temperature = temperature;
@@ -48,6 +102,7 @@ export class Runtime {
         this.presencePenalty = presencePenalty;
         this.localCompat = localCompat;
         this.reasoningEffort = reasoningEffort;
+        this.provider = provider;
         this.fetchImpl = fetchImpl;
     }
 
@@ -65,32 +120,52 @@ export class Runtime {
                 if (!retryable || attempt === this.retryMax) {
                     throw error;
                 }
-                await sleep(error.retryAfterMs ?? 400 * (attempt + 1));
+                await sleep(backoffMs(error, attempt));
             }
         }
 
         throw lastError;
     }
 
+    assertOpenRouterModel() {
+        if (this.provider !== "openrouter") return;
+        const paid = [this.model, ...this.fallbackModels].find((id) => !isFreeOpenRouterModel(id));
+        if (!paid) return;
+        throw new LlmProviderError(
+            "model_unavailable",
+            `Refusing paid OpenRouter model "${paid}". OPENROUTER_MODEL and OPENROUTER_FALLBACK_MODELS must be :free models.`,
+            { status: 400 }
+        );
+    }
+
     async requestOnce(messages, options, attempt) {
+        this.assertOpenRouterModel();
+
         const requestedAt = Date.now();
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
-        const headers = { "Content-Type": "application/json" };
+        const headers = {
+            "Content-Type": "application/json",
+            ...this.extraHeaders
+        };
         if (this.apiKey) {
             headers.Authorization = `Bearer ${this.apiKey}`;
         }
 
         const body = {
             model: this.model,
-            messages,
+            messages: normalizeMessages(messages, this.sendTools),
             temperature: options.temperature ?? this.temperature,
             max_tokens: options.maxTokens ?? this.maxTokens,
             stream: false
         };
 
-        if (options.tools?.length) {
+        if (this.provider === "openrouter" && this.fallbackModels.length) {
+            body.models = [this.model, ...this.fallbackModels];
+        }
+
+        if (this.sendTools && options.tools?.length) {
             body.tools = options.tools;
         }
 
@@ -128,17 +203,23 @@ export class Runtime {
         }
 
         const durationMs = Date.now() - requestedAt;
+        const rawText = await response.text();
+        let data = null;
+
+        if (rawText) {
+            try {
+                data = JSON.parse(rawText);
+            } catch {
+                data = null;
+            }
+        }
 
         if (!response.ok) {
-            const errorText = await response.text();
-            const code = response.status === 429
-                ? "rate_limit"
-                : response.status === 401 || response.status === 403
-                    ? "auth"
-                    : "provider";
+            const errorText = readErrorText(data, rawText).slice(0, 400);
+            const code = classifyHttpError(response.status, errorText);
             const providerError = new LlmProviderError(
                 code,
-                `LLM runtime error ${response.status}: ${errorText.slice(0, 400)}`,
+                `LLM runtime error ${response.status}: ${errorText}`,
                 { status: response.status, retryAfterMs: retryAfterMs(response) }
             );
             console.error(`[LLM] ${providerError.message}`);
@@ -150,7 +231,34 @@ export class Runtime {
             throw providerError;
         }
 
-        const data = await response.json();
+        if (!data || typeof data !== "object") {
+            const providerError = new LlmProviderError(
+                "provider",
+                "LLM returned a malformed response",
+                { status: response.status }
+            );
+            this.recordFailure(options.callId, providerError, {
+                durationMs,
+                attempt,
+                status: response.status
+            });
+            throw providerError;
+        }
+
+        const message = data.choices?.[0]?.message;
+        if (!message) {
+            const providerError = new LlmProviderError(
+                "provider",
+                "LLM response had no message",
+                { status: response.status }
+            );
+            this.recordFailure(options.callId, providerError, {
+                durationMs,
+                attempt,
+                status: response.status
+            });
+            throw providerError;
+        }
 
         if (data.timings) {
             const servedMs =
@@ -163,28 +271,38 @@ export class Runtime {
             );
         }
 
-        telemetry.recordModelUsage(options.callId, this.model, {
+        const servedModel = data.model || this.model;
+        if (this.provider === "openrouter" && data.model && !String(data.model).startsWith(this.model.replace(/:free$/, ""))) {
+            console.log(`[LLM] Served by fallback ${data.model}`);
+        }
+
+        telemetry.recordModelUsage(options.callId, servedModel, {
             stage: STAGES.LLM,
+            provider: this.provider,
             promptTokens: data.usage?.prompt_tokens,
             completionTokens: data.usage?.completion_tokens,
             totalTokens: data.usage?.total_tokens,
             durationMs,
             ttftMs: null,
-            retries: attempt
+            retries: attempt,
+            status: response.status
         });
 
-        return data.choices?.[0]?.message ?? { content: "" };
+        return message;
     }
 
     recordFailure(callId, error, extra = {}) {
         telemetry.recordError(callId, STAGES.LLM, error);
         telemetry.recordModelUsage(callId, this.model, {
             stage: STAGES.LLM,
+            provider: this.provider,
             promptTokens: 0,
             completionTokens: 0,
             durationMs: extra.durationMs ?? null,
             ttftMs: null,
-            retries: extra.attempt ?? 0
+            retries: extra.attempt ?? 0,
+            status: extra.status ?? error.status ?? 0,
+            errorCode: error.code
         });
     }
 }

@@ -1,0 +1,496 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Yuga by Tokenly — Voice operations for merchants</title>
+  <meta name="description" content="A product presentation for Yuga, the voice operations agent that turns merchant conversations into business actions." />
+  <style>
+    :root {
+      --bg: #0c0d10;
+      --bg-2: #12141a;
+      --card: #171a21;
+      --line: rgba(255, 255, 255, 0.08);
+      --text: #efece6;
+      --muted: #9aa0ad;
+      --faint: #6d7380;
+      --accent: #c84141;
+      --accent-2: #e06a4f;
+      --ok: #3d9b6e;
+      --warn: #c9a227;
+      --exp: #6b8cae;
+      --plan: #7a7f8c;
+      --shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+      --serif: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); }
+    body { overflow: hidden; }
+    button, a { font: inherit; color: inherit; }
+    button { cursor: pointer; border: 0; background: none; }
+
+    .deck { height: 100%; position: relative; }
+    .slide {
+      position: absolute; inset: 0;
+      padding: clamp(20px, 3.4vh, 40px) clamp(24px, 4vw, 72px) 92px;
+      overflow: auto;
+      opacity: 0; visibility: hidden; pointer-events: none;
+      transform: translateY(10px);
+      transition: opacity 280ms ease, transform 280ms ease, visibility 280ms;
+    }
+    .slide.active { opacity: 1; visibility: visible; pointer-events: auto; transform: none; }
+    .slide-inner { max-width: 1180px; margin: 0 auto; min-height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 28px; }
+
+    .kicker { font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-2); font-weight: 600; }
+    h1, h2 { font-family: var(--serif); font-weight: 600; letter-spacing: -0.03em; margin: 0; line-height: 1.08; }
+    h1 { font-size: clamp(32px, 5.2vw, 64px); }
+    h2 { font-size: clamp(26px, 3.6vw, 42px); }
+    p { margin: 0; color: var(--muted); line-height: 1.55; }
+    .lead { font-size: clamp(17px, 2vw, 22px); max-width: 720px; }
+
+    .row { display: grid; gap: 18px; }
+    .row-2 { grid-template-columns: 1.1fr 0.9fr; }
+    .row-3 { grid-template-columns: repeat(3, 1fr); }
+    .row-4 { grid-template-columns: repeat(4, 1fr); }
+    .card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), transparent), var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 20px;
+    }
+    .label { font-size: 12px; color: var(--faint); letter-spacing: 0.04em; text-transform: uppercase; }
+    .value { font-family: var(--serif); font-size: 28px; margin-top: 6px; }
+    .muted { color: var(--muted); }
+    .tiny { font-size: 13px; color: var(--faint); line-height: 1.45; }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      border-radius: 999px; padding: 4px 9px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+      border: 1px solid var(--line);
+    }
+    .badge.working { color: #9ee0bc; background: rgba(61,155,110,0.12); }
+    .badge.partial { color: #ead27a; background: rgba(201,162,39,0.12); }
+    .badge.experimental { color: #b9d0ea; background: rgba(107,140,174,0.14); }
+    .badge.planned { color: #c4c8d0; background: rgba(122,127,140,0.14); }
+    .badge.sample { color: #f0c3b8; background: rgba(200,65,65,0.12); }
+
+    .chrome {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 16px 28px; background: linear-gradient(180deg, transparent, rgba(12,13,16,0.96));
+      pointer-events: none;
+    }
+    .chrome > * { pointer-events: auto; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+    .mark { width: 22px; height: 22px; border-radius: 7px; background: linear-gradient(180deg, #d45454, #c84141); }
+    .dots { display: flex; gap: 7px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #3a3f4a; }
+    .dot.on { background: var(--accent); }
+    .nav-btns { display: flex; gap: 8px; }
+    .nav-btns button, .fs-btn {
+      border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; color: var(--text); background: #1b1e26;
+    }
+
+    .hero-visual {
+      display: grid; gap: 10px; padding: 18px;
+      background: radial-gradient(circle at 80% 0%, rgba(200,65,65,0.18), transparent 42%), var(--card);
+    }
+    .pipe { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .chip { border: 1px solid var(--line); border-radius: 999px; padding: 8px 12px; font-size: 13px; background: #111318; }
+    .arrow { color: var(--faint); }
+
+    .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .compare h3 { margin: 0 0 10px; font-size: 16px; }
+    .compare li { margin: 0 0 8px; color: var(--muted); }
+
+    .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+    .step { min-height: 132px; }
+    .step b { display: block; font-size: 12px; color: var(--accent-2); margin-bottom: 8px; }
+
+    .walk { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 18px; }
+    .bubble { border-radius: 16px; padding: 14px 16px; max-width: 92%; }
+    .bubble.user { background: #232733; margin-left: auto; }
+    .bubble.agent { background: rgba(200,65,65,0.12); border: 1px solid rgba(200,65,65,0.2); }
+    .who { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); margin-bottom: 6px; }
+    .actions { display: grid; gap: 10px; }
+    .action { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+    .sim-note { font-size: 12px; color: var(--warn); }
+
+    .arch { display: grid; gap: 10px; }
+    .arch-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .layer { font-size: 12px; color: var(--faint); width: 140px; flex: 0 0 140px; }
+
+    .metric { }
+    .metric .value.bad { color: #e38b8b; }
+
+    .close-points { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+
+    @media (max-width: 980px) {
+      .row-2, .row-3, .row-4, .compare, .walk, .close-points { grid-template-columns: 1fr; }
+      .layer { width: 100%; flex-basis: 100%; }
+      body { overflow: auto; }
+      .slide { position: relative; opacity: 1; visibility: visible; pointer-events: auto; transform: none; height: auto; min-height: 100vh; }
+      .slide + .slide { border-top: 1px solid var(--line); }
+    }
+
+    @media print {
+      body { overflow: visible; background: #fff; color: #111; }
+      .chrome { display: none; }
+      .slide { position: relative; opacity: 1; visibility: visible; page-break-after: always; color: #111; background: #fff; }
+      .card, .chip, .bubble { border-color: #ddd; background: #f7f7f7; }
+      p, li, .muted, .tiny { color: #444; }
+    }
+  </style>
+</head>
+<body>
+  <div class="deck" id="deck">
+    <section class="slide active" data-slide="0" aria-label="Hero">
+      <div class="slide-inner">
+        <div class="kicker">Yuga · Voice operations agent · Tokenly</div>
+        <h1>Your business.<br>Your voice.<br>Your operations.</h1>
+        <p class="lead">Meet Yuga, the voice AI agent that turns merchant conversations into business actions.</p>
+        <div class="row row-2">
+          <div>
+            <p>Yuga answers a merchant’s phone line, looks up real catalogue and customer records, and can draft an invoice after the caller confirms. It is not a FAQ bot. It is an operations agent on a live call.</p>
+          </div>
+          <div class="card hero-visual">
+            <div class="label">Live call path</div>
+            <div class="pipe" style="margin-top:14px">
+              <span class="chip">Customer phone</span><span class="arrow">→</span>
+              <span class="chip">Exotel</span><span class="arrow">→</span>
+              <span class="chip">Yuga</span><span class="arrow">→</span>
+              <span class="chip">Inventory</span><span class="arrow">→</span>
+              <span class="chip">Invoice</span>
+            </div>
+            <p class="tiny" style="margin-top:16px">Spoken replies never include Mongo IDs. Tools keep the exact product and customer IDs for the database.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="1" aria-label="The merchant problem">
+      <div class="slide-inner">
+        <div class="kicker">The problem</div>
+        <h2>Phone orders still mean manual work.</h2>
+        <div class="compare">
+          <div class="card">
+            <h3>Before</h3>
+            <ul>
+              <li>Repeat availability and price questions.</li>
+              <li>Open inventory to check stock.</li>
+              <li>Look up or create the customer by hand.</li>
+              <li>Write the order, then raise an invoice later.</li>
+              <li>A missed call is often a missed order.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3>With Yuga</h3>
+            <ul>
+              <li>The caller speaks naturally on the merchant number.</li>
+              <li>Stock and price come from the live catalogue.</li>
+              <li>The incoming number links or creates the customer.</li>
+              <li>A confirmed quote can become a draft invoice.</li>
+              <li>The merchant reviews the result in the existing billing app.</li>
+            </ul>
+          </div>
+        </div>
+        <p class="tiny">No market-size claims. This is the operational loop the current stack is built to shorten.</p>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="2" aria-label="What Yuga can do">
+      <div class="slide-inner">
+        <div class="kicker">Capabilities</div>
+        <h2>What is in the codebase today.</h2>
+        <div class="row row-4">
+          <div class="card"><span class="badge working">Working</span><h3 style="margin:12px 0 8px;font-size:18px">Voice calls</h3><p>Exotel inbound audio, Silero VAD, Nemotron ASR, Kokoro TTS, hang-up after goodbye or invoice.</p></div>
+          <div class="card"><span class="badge working">Working</span><h3 style="margin:12px 0 8px;font-size:18px">Catalogue</h3><p>search_catalog lists or searches Mongo inventory. Returns name, price, unit, stock, and item_id.</p></div>
+          <div class="card"><span class="badge working">Working</span><h3 style="margin:12px 0 8px;font-size:18px">Customers</h3><p>Incoming number lookup on customerdetails. Creates an Individual customer if none exists.</p></div>
+          <div class="card"><span class="badge working">Working</span><h3 style="margin:12px 0 8px;font-size:18px">Quotes & invoices</h3><p>quote_order totals from the database. After an explicit yes, create_invoice writes a draft. Duplicates are blocked.</p></div>
+        </div>
+        <div class="row row-4">
+          <div class="card"><span class="badge working">Working</span><h3 style="margin:12px 0 8px;font-size:18px">Stock checks</h3><p>Recorded on cb0a2a3f. Caller asked for 20 rice. Stock was 5. Partial quote ₹288.75, then INV-48CFE293.</p></div>
+          <div class="card"><span class="badge working">Working</span><h3 style="margin:12px 0 8px;font-size:18px">Multi-product orders</h3><p>Recorded on 805a612e. One sugar, one cooking oil, one biscuit. Draft invoice INV-336D3A1F, ₹212.60.</p></div>
+          <div class="card"><span class="badge partial">Partial</span><h3 style="margin:12px 0 8px;font-size:18px">Merchant dashboard</h3><p>Invoices land in the existing wAI billing database. This repo does not host the dashboard UI.</p></div>
+          <div class="card"><span class="badge working">Working</span><h3 style="margin:12px 0 8px;font-size:18px">Kural telemetry</h3><p>Per-call HTML reports for ASR, LLM, TTS, tools, CPU, RAM, and errors.</p></div>
+        </div>
+        <p class="tiny">Payment collection, payment links, and “paid” status are not implemented on the call. Draft invoices are UnPaid. Streaming ASR exists as an unused path. Multilingual voice is planned.</p>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="3" aria-label="Recorded scenarios">
+      <div class="slide-inner">
+        <div class="kicker">Live Exotel calls · telemetry/calls</div>
+        <h2>Two scenarios, both recorded today.</h2>
+        <div class="compare">
+          <div class="card">
+            <span class="badge working">Invoice created</span>
+            <h3 style="margin:12px 0 8px">Scenario 1 · Multi-product order</h3>
+            <p class="tiny" style="margin-bottom:12px"><code>805a612e7d4d8d05735234fc71b31aav</code> · 1m 45s · 3 turns</p>
+            <ul>
+              <li>Caller asks what is available.</li>
+              <li>Yuga lists biscuit, cooking oil, rice, sugar from Mongo.</li>
+              <li>“One sugar, one cooking oil, one biscuit.”</li>
+              <li>quote_order totals ₹212.60 including tax.</li>
+              <li>Caller says yes. create_invoice writes <strong>INV-336D3A1F</strong>.</li>
+            </ul>
+          </div>
+          <div class="card">
+            <span class="badge working">Invoice created</span>
+            <h3 style="margin:12px 0 8px">Scenario 2 · Stock shortage</h3>
+            <p class="tiny" style="margin-bottom:12px"><code>cb0a2a3f4f3e925f3fb3abc0a0e11aav</code> · 1m 4s · 3 turns</p>
+            <ul>
+              <li>Caller asks for 20 packets of rice.</li>
+              <li>Inventory has 5. Application code refuses the extra 15.</li>
+              <li>Yuga offers the 5 at the catalogue total, ₹288.75.</li>
+              <li>Caller accepts the partial.</li>
+              <li>create_invoice writes <strong>INV-48CFE293</strong>.</li>
+            </ul>
+          </div>
+        </div>
+        <p class="tiny">A third recorded call, <code>62b3c4652764e0460c0cb913bbf11aav</code>, quoted five sugar and one biscuit at ₹233.60. The caller said yes, but the model thanked them without calling create_invoice. That miss is in the telemetry slide.</p>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="4" aria-label="Interactive walkthrough">
+      <div class="slide-inner">
+        <div class="kicker">Interactive walkthrough</div>
+        <h2>Scenario 2, as spoken on the call.</h2>
+        <p class="sim-note">Replay of <code>cb0a2a3f4f3e925f3fb3abc0a0e11aav</code>. The lines are from that recording. Clicking here does not place another order.</p>
+        <div class="walk">
+          <div class="card" id="chat" style="min-height:320px;display:flex;flex-direction:column;gap:12px;justify-content:flex-end"></div>
+          <div>
+            <div class="actions" id="actions"></div>
+            <div style="display:flex;gap:8px;margin-top:16px">
+              <button class="nav-btns" id="prevStep" type="button" style="border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:#1b1e26">Back</button>
+              <button class="nav-btns" id="nextStep" type="button" style="border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:#1b1e26">Next beat</button>
+              <button class="nav-btns" id="resetStep" type="button" style="border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:#1b1e26">Replay</button>
+            </div>
+            <p class="tiny" style="margin-top:10px" id="stepLabel"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="5" aria-label="Architecture">
+      <div class="slide-inner">
+        <div class="kicker">Architecture</div>
+        <h2>Voice in. Operations out.</h2>
+        <div class="card arch">
+          <div class="arch-row"><span class="layer">Channel</span><span class="chip">Customer phone</span><span class="arrow">→</span><span class="chip">Exotel websocket</span><span class="arrow">/</span><span class="chip">Browser websocket</span></div>
+          <div class="arch-row"><span class="layer">Voice / inference</span><span class="chip">Silero VAD</span><span class="chip">Nemotron ASR :8080</span><span class="chip">LLM Runtime</span><span class="chip">Kokoro TTS</span></div>
+          <div class="arch-row"><span class="layer">Orchestration</span><span class="chip">Reasoner</span><span class="chip">System prompt</span><span class="chip">Order state</span><span class="chip">Confirm-then-commit</span></div>
+          <div class="arch-row"><span class="layer">Business tools</span><span class="chip">search_catalog</span><span class="chip">quote_order</span><span class="chip">create_invoice</span><span class="chip">lookupCustomer</span></div>
+          <div class="arch-row"><span class="layer">Data</span><span class="chip">MongoDB wai</span><span class="chip">customerdetails</span><span class="chip">newinventorydetails</span><span class="chip">invoicedetails</span></div>
+          <div class="arch-row"><span class="layer">Merchant view</span><span class="chip">wAI billing dashboard</span><span class="arrow">←</span><span class="chip">draft invoice</span></div>
+          <div class="arch-row"><span class="layer">Telemetry</span><span class="chip">Yuga traces</span><span class="chip">telemetry/calls</span><span class="chip">CPU / RAM / errors</span></div>
+        </div>
+        <p class="tiny">No invented middleware. TTS and ASR stay local in both inference modes. Only the LLM host changes.</p>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="6" aria-label="Inference modes">
+      <div class="slide-inner">
+        <div class="kicker">INFERENCE_MODE</div>
+        <h2>Same operations. Two inference hosts.</h2>
+        <p>We did not reuse NODE_ENV. That already means development or production in Node. The switch is <code>INFERENCE_MODE</code>.</p>
+        <div class="row row-2">
+          <div class="card">
+            <div class="label">local</div>
+            <h3 style="margin:8px 0 12px">Merchant box</h3>
+            <p>llama-server on :8081, Qwen3-0.6B. Nemo speech on :8080. Kokoro TTS in-process. If the local LLM is down, the call errors. It does not fall back to Groq.</p>
+          </div>
+          <div class="card">
+            <div class="label">provider · default</div>
+            <h3 style="margin:8px 0 12px">Hosted LLM</h3>
+            <p>Groq <code>openai/gpt-oss-120b</code> at <code>https://api.groq.com/openai/v1</code>. Needs GROQ_API_KEY or LLM_API_KEY. ASR and TTS stay local.</p>
+          </div>
+        </div>
+        <div class="card">
+          <p class="tiny">Required: INFERENCE_MODE=local|provider · GROQ_API_KEY or LLM_API_KEY (provider) · optional LLM_MODEL, LLM_BASE_URL, ASR_URL. Catalogue, customers, and invoices always use Mongo. They do not change with the model host.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="7" aria-label="Yuga telemetry">
+      <div class="slide-inner">
+        <div class="kicker">Yuga telemetry · telemetry/calls</div>
+        <h2>The three Exotel calls on disk.</h2>
+        <p>Numbers from the HTML reports written after each hang-up. Customer Vicky, incoming 09789729792.</p>
+        <div class="row row-3">
+          <div class="card">
+            <span class="badge working">Invoice</span>
+            <h3 style="margin:12px 0 8px;font-size:18px">Multi-product</h3>
+            <p class="tiny"><code>805a612e…1aav</code></p>
+            <p style="margin-top:10px">1m 45s · 3 turns · p50 18.4 s · p95 18.9 s</p>
+            <p class="tiny">CPU 27.9% peak 73.1% · RAM 2.61 GiB · error 6.3%</p>
+            <p class="tiny" style="margin-top:8px">INV-336D3A1F · ₹212.60 · create_invoice 883 ms</p>
+          </div>
+          <div class="card">
+            <span class="badge working">Invoice</span>
+            <h3 style="margin:12px 0 8px;font-size:18px">Rice shortage</h3>
+            <p class="tiny"><code>cb0a2a3f…1aav</code></p>
+            <p style="margin-top:10px">1m 4s · 3 turns · p50 4.59 s · p95 12.6 s</p>
+            <p class="tiny">CPU 25.5% peak 69.4% · RAM 2.63 GiB · error 0%</p>
+            <p class="tiny" style="margin-top:8px">INV-48CFE293 · ₹288.75 · create_invoice 489 ms</p>
+          </div>
+          <div class="card">
+            <span class="badge sample">No invoice</span>
+            <h3 style="margin:12px 0 8px;font-size:18px">Quoted, not committed</h3>
+            <p class="tiny"><code>62b3c465…1aav</code></p>
+            <p style="margin-top:10px">3m 10s · 13 turns · p50 5.29 s · p95 11.8 s</p>
+            <p class="tiny">CPU 23.0% peak 72.1% · RAM 2.66 GiB · error 0%</p>
+            <p class="tiny" style="margin-top:8px">Quoted ₹233.60. Caller said yes. Model thanked them and never called create_invoice.</p>
+          </div>
+        </div>
+        <p class="tiny">Telemetry is for seeing both outcomes. Two calls finished a draft invoice. One did not. Full reports: <code>telemetry/calls/&lt;callId&gt;/index.html</code>.</p>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="8" aria-label="Roadmap">
+      <div class="slide-inner">
+        <div class="kicker">Roadmap</div>
+        <h2>Not in this build.</h2>
+        <div class="row row-3">
+          <div class="card"><span class="badge planned">Planned</span><h3 style="margin:12px 0 8px;font-size:18px">Voice quality</h3><p>Better multilingual ASR/TTS, streaming spoken replies, barge-in and interruption.</p></div>
+          <div class="card"><span class="badge planned">Planned</span><h3 style="margin:12px 0 8px;font-size:18px">Merchant ops</h3><p>Supplier procurement, outstanding payment follow-up, low-stock alerts.</p></div>
+          <div class="card"><span class="badge planned">Planned</span><h3 style="margin:12px 0 8px;font-size:18px">Intelligence</h3><p>Conversational business reporting and more billing-app integrations.</p></div>
+        </div>
+        <div class="card">
+          <span class="badge experimental">Experimental</span>
+          <p style="margin-top:10px">A streaming transcriber class exists in the repo. The live Exotel path uses batch ASR after VAD end-of-utterance. Payment status on invoices stays UnPaid. No payment link is generated on the call.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-slide="9" aria-label="Closing">
+      <div class="slide-inner">
+        <div class="kicker">Tokenly · Yuga</div>
+        <h1>From conversations to business operations.</h1>
+        <p class="lead">Yuga makes merchant operations reachable through a phone call — with the database as the source of truth.</p>
+        <div class="close-points">
+          <div class="card"><div class="label">Less manual work</div><p class="tiny" style="margin-top:8px">Lookups and draft invoices happen during the call.</p></div>
+          <div class="card"><div class="label">Accessible ops</div><p class="tiny" style="margin-top:8px">The customer speaks. The merchant reviews the result.</p></div>
+          <div class="card"><div class="label">Real actions</div><p class="tiny" style="margin-top:8px">Stock, prices, customers, invoices come from Mongo.</p></div>
+          <div class="card"><div class="label">Flexible inference</div><p class="tiny" style="margin-top:8px">Local llama or Groq. Same tools either way.</p></div>
+          <div class="card"><div class="label">Measurable</div><p class="tiny" style="margin-top:8px">telemetry/calls shows when a call wrote an invoice — and when it did not.</p></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="chrome">
+    <div class="brand"><span class="mark"></span> Yuga · Tokenly</div>
+    <div class="dots" id="dots"></div>
+    <div class="nav-btns">
+      <button type="button" id="prev">Prev</button>
+      <button type="button" id="next">Next</button>
+      <button type="button" class="fs-btn" id="fs">Full screen</button>
+    </div>
+  </footer>
+
+  <script>
+    const slides = [...document.querySelectorAll(".slide")];
+    const dots = document.getElementById("dots");
+    let index = 0;
+
+    slides.forEach((_, i) => {
+      const d = document.createElement("button");
+      d.className = "dot" + (i === 0 ? " on" : "");
+      d.type = "button";
+      d.setAttribute("aria-label", "Go to section " + (i + 1));
+      d.addEventListener("click", () => go(i));
+      dots.appendChild(d);
+    });
+
+    function go(next) {
+      index = Math.max(0, Math.min(slides.length - 1, next));
+      slides.forEach((s, i) => s.classList.toggle("active", i === index));
+      [...dots.children].forEach((d, i) => d.classList.toggle("on", i === index));
+    }
+
+    document.getElementById("prev").onclick = () => go(index - 1);
+    document.getElementById("next").onclick = () => go(index + 1);
+    document.getElementById("fs").onclick = () => {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+      else document.exitFullscreen?.();
+    };
+
+    document.addEventListener("keydown", (event) => {
+      if (["INPUT", "TEXTAREA"].includes(event.target.tagName)) return;
+      if (["ArrowRight", "PageDown", " "].includes(event.key)) { event.preventDefault(); go(index + 1); }
+      if (["ArrowLeft", "PageUp"].includes(event.key)) { event.preventDefault(); go(index - 1); }
+      if (event.key === "Home") go(0);
+      if (event.key === "End") go(slides.length - 1);
+      if (event.key === "f") document.getElementById("fs").click();
+    });
+
+    const beats = [
+      {
+        chat: [
+          ["user", "Customer", "An eight twenty packets of rice."]
+        ],
+        actions: [["Call", "cb0a2a3f4f3e925f3fb3abc0a0e11aav"], ["ASR", "Quantity unclear"]]
+      },
+      {
+        chat: [
+          ["user", "Customer", "An eight twenty packets of rice."],
+          ["agent", "Yuga", "I’m not sure I understood the quantity. Would you like 8 packets of rice?"]
+        ],
+        actions: [["Catalog", "search_catalog rice"], ["Clarify", "8 vs 20"]]
+      },
+      {
+        chat: [
+          ["agent", "Yuga", "I’m not sure I understood the quantity. Would you like 8 packets of rice?"],
+          ["user", "Customer", "No twenty"]
+        ],
+        actions: [["Intent", "Rice × 20"], ["Next", "quote_order against live stock"]]
+      },
+      {
+        chat: [
+          ["user", "Customer", "No twenty"],
+          ["agent", "Yuga", "We’ve got only 5 packets of rice in stock. I can quote you for those 5 packets at a total of 288.75 rupees. Would you like to proceed with this partial order?"]
+        ],
+        actions: [["Stock check", "Requested 20 · available 5"], ["Quote", "₹288.75 from quote_order"]]
+      },
+      {
+        chat: [
+          ["agent", "Yuga", "We’ve got only 5 packets of rice in stock. I can quote you for those 5 packets at a total of 288.75 rupees. Would you like to proceed with this partial order?"],
+          ["user", "Customer", "Yes."]
+        ],
+        actions: [["Confirmation", "Explicit yes"], ["Commit", "create_invoice"]]
+      },
+      {
+        chat: [
+          ["agent", "Yuga", "I've put a draft invoice on your account. Thank you, have a nice day."]
+        ],
+        actions: [["Invoice", "INV-48CFE293 · ₹288.75 · DRAFT"], ["Status", "UnPaid · not a payment"], ["Report", "telemetry/calls/cb0a2a3f…/index.html"]]
+      }
+    ];
+
+    let beat = 0;
+    const chat = document.getElementById("chat");
+    const actions = document.getElementById("actions");
+    const stepLabel = document.getElementById("stepLabel");
+
+    function renderBeat() {
+      const current = beats[beat];
+      chat.innerHTML = current.chat.map(([kind, who, text]) =>
+        `<div class="bubble ${kind}"><div class="who">${who}</div>${text}</div>`
+      ).join("");
+      actions.innerHTML = current.actions.map(([title, detail]) =>
+        `<div class="card action"><div><div class="label">${title}</div><div style="margin-top:6px">${detail}</div></div></div>`
+      ).join("");
+      stepLabel.textContent = `Beat ${beat + 1} of ${beats.length} · recorded call walkthrough`;
+    }
+
+    document.getElementById("prevStep").onclick = () => { beat = Math.max(0, beat - 1); renderBeat(); };
+    document.getElementById("nextStep").onclick = () => { beat = Math.min(beats.length - 1, beat + 1); renderBeat(); };
+    document.getElementById("resetStep").onclick = () => { beat = 0; renderBeat(); };
+    renderBeat();
+  </script>
+</body>
+</html>

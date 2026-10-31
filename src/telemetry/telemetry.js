@@ -1,4 +1,8 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+
 import { TELEMETRY_CONFIG, STAGES } from "./config.js";
+import { attachCallCost, emptyTelephony } from "./cost.js";
 import {
     hostInfo,
     measureIdleBaseline,
@@ -7,6 +11,7 @@ import {
     systemCpuTimes
 } from "./resources.js";
 import { writeCallReport, writeOverviewReport } from "./report.js";
+import { fetchExotelCallDetails } from "../telephony/exotelStatus.js";
 
 export class Telemetry {
     constructor() {
@@ -16,6 +21,9 @@ export class Telemetry {
         this.sampler = null;
         this.pendingWrites = new Set();
         this.peakConcurrency = 0;
+        this.pendingTelephony = new Map();
+        this.ledger = null;
+        this.outputDir = TELEMETRY_CONFIG.outputDir;
     }
 
     async measureBaseline(durationMs = TELEMETRY_CONFIG.baselineDurationMs) {
@@ -31,6 +39,13 @@ export class Telemetry {
 
     startTrace(callId, metadata = {}) {
         if (!callId) return null;
+
+        const existing = this.traces.get(callId);
+        if (existing) {
+            existing.metadata = { ...existing.metadata, ...metadata, resumedAt: Date.now() };
+            console.log(`[TELEMETRY] Trace resumed: ${callId}`);
+            return existing;
+        }
 
         const trace = {
             callId,
@@ -49,6 +64,8 @@ export class Telemetry {
             queueWaits: [],
             errors: [],
             businessActions: [],
+            telephony: this.createTelephony(callId, metadata),
+            cost: null,
             resource: null,
             peakConcurrency: this.traces.size + 1,
 
@@ -59,6 +76,7 @@ export class Telemetry {
         };
 
         this.traces.set(callId, trace);
+        this.mergePendingTelephony(trace);
         this.markConcurrency();
         this.recordResourceSnapshot(callId);
         this.startSampler();
@@ -262,13 +280,16 @@ export class Telemetry {
         const record = {
             turnIndex: trace.activeTurn?.index ?? null,
             stage: usage.stage ?? null,
+            provider: usage.provider ?? null,
             model,
             promptTokens: Number(usage.promptTokens ?? 0),
             completionTokens: Number(usage.completionTokens ?? 0),
             audioMs: usage.audioMs ?? null,
             durationMs: usage.durationMs ?? null,
             ttftMs: usage.ttftMs ?? null,
-            retries: Number(usage.retries ?? 0)
+            retries: Number(usage.retries ?? 0),
+            status: usage.status ?? null,
+            errorCode: usage.errorCode ?? null
         };
 
         record.totalTokens = record.promptTokens + record.completionTokens;
@@ -287,7 +308,7 @@ export class Telemetry {
     }
 
     recordBusinessAction(callId, action, detail = {}) {
-        const trace = this.traces.get(callId);
+        const trace = this.findTrace(callId);
         if (!trace) return null;
 
         const record = {
@@ -300,6 +321,27 @@ export class Telemetry {
         trace.businessActions.push(record);
 
         return record;
+    }
+
+    recordTransfer(callId, update = {}) {
+        const trace = this.findTrace(callId);
+        if (!trace) return null;
+
+        trace.transfer = {
+            ...(trace.transfer || {}),
+            ...update
+        };
+
+        this.recordBusinessAction(callId, "transfer_to_human", {
+            ok: update.ok === true && update.status === "connected",
+            status: update.status,
+            department: update.department ?? null,
+            label: update.label ?? null,
+            reason: update.reason ?? null,
+            dialCallStatus: update.dialCallStatus ?? null
+        });
+
+        return trace.transfer;
     }
 
     recordError(callId, stage, error) {
@@ -343,6 +385,9 @@ export class Telemetry {
         delete trace.activeTurn;
         delete trace.lastSample;
 
+        this.finalizeTelephony(trace);
+        attachCallCost(trace);
+
         this.traces.delete(callId);
         this.markConcurrency();
         this.completed.push(trace);
@@ -360,8 +405,251 @@ export class Telemetry {
 
         this.track(writeCallReport(trace));
         this.track(writeOverviewReport(this.getAggregatedMetrics()));
+        this.track(this.refreshAfterTelephony(trace));
 
         return trace;
+    }
+
+    createTelephony(callId, metadata) {
+        if (metadata.channel !== "exotel") {
+            return emptyTelephony({
+                provider: metadata.channel ?? null,
+                callSid: callId,
+                costStatus: "not_applicable"
+            });
+        }
+
+        return emptyTelephony({
+            callSid: metadata.exotelCallSid ?? callId,
+            direction: metadata.direction ?? "inbound",
+            startedAt: Date.now(),
+            status: "in-progress",
+            from: metadata.from ?? null,
+            to: metadata.to ?? null
+        });
+    }
+
+    finalizeTelephony(trace) {
+        const telephony = trace.telephony ?? emptyTelephony({ callSid: trace.callId });
+        const appSeconds = Math.round((trace.durationMs ?? 0) / 1000);
+
+        telephony.endedAt = telephony.endedAt ?? Date.now();
+        telephony.appDurationSeconds = appSeconds;
+
+        if (telephony.connectedDurationSeconds == null && trace.metadata?.channel === "exotel") {
+            telephony.connectedDurationSeconds = appSeconds;
+            telephony.durationSource = "application";
+        }
+
+        if (!telephony.status || telephony.status === "in-progress") {
+            telephony.status = "completed";
+        }
+
+        trace.telephony = telephony;
+        return telephony;
+    }
+
+    findTrace(callSid) {
+        return this.traces.get(callSid)
+            ?? this.completed.find((trace) =>
+                trace.callId === callSid || trace.telephony?.callSid === callSid
+            )
+            ?? null;
+    }
+
+    mergePendingTelephony(trace) {
+        const callSid = trace.telephony?.callSid ?? trace.callId;
+        const pending = this.pendingTelephony.get(callSid);
+        if (!pending) return;
+
+        this.patchTelephony(trace, pending);
+        this.pendingTelephony.delete(callSid);
+    }
+
+    patchTelephony(trace, update) {
+        const telephony = trace.telephony ?? emptyTelephony({ callSid: update.callSid ?? trace.callId });
+        const signature = JSON.stringify({
+            callSid: update.callSid ?? telephony.callSid,
+            duration: update.connectedDurationSeconds,
+            status: update.status,
+            actual: update.actualPaise,
+            source: update.source
+        });
+
+        const duplicate = telephony.lastSignature === signature;
+
+        if (update.callSid) telephony.callSid = update.callSid;
+        if (update.direction) telephony.direction = update.direction;
+        if (update.status) telephony.status = update.status;
+        if (update.startedAt) telephony.startedAt = update.startedAt;
+        if (update.endedAt) telephony.endedAt = update.endedAt;
+        if (update.connectedDurationSeconds != null) {
+            telephony.connectedDurationSeconds = update.connectedDurationSeconds;
+            telephony.durationSource = update.durationSource ?? "exotel";
+        }
+        if (Number.isInteger(update.actualPaise)) {
+            telephony.actualPaise = update.actualPaise;
+            telephony.reconciliation = {
+                source: update.source ?? "exotel",
+                at: update.invoicedAt ?? Date.now(),
+                currency: update.currency ?? "INR"
+            };
+        }
+
+        telephony.lastSignature = signature;
+        trace.telephony = telephony;
+        attachCallCost(trace);
+
+        return { trace, cost: trace.cost, duplicate };
+    }
+
+    async applyTelephonyUpdate(callSid, update) {
+        const live = this.findTrace(callSid);
+
+        if (!live) {
+            const fromDisk = await this.loadTraceFromDisk(callSid);
+            if (!fromDisk) {
+                this.pendingTelephony.set(callSid, { ...update, callSid });
+                return { cost: null, duplicate: false, pending: true };
+            }
+            return this.persistTelephonyUpdate(fromDisk, update);
+        }
+
+        return this.persistTelephonyUpdate(live, update);
+    }
+
+    async persistTelephonyUpdate(trace, update) {
+        const result = this.patchTelephony(trace, update);
+        await this.writeLedger(trace);
+        if (trace.endedAt) {
+            this.track(writeCallReport(trace));
+            this.track(writeOverviewReport(this.getAggregatedMetrics()));
+        }
+        return result;
+    }
+
+    async reconcileTelephonyCost(callSid, { actualPaise, source, currency, invoicedAt }) {
+        return this.applyTelephonyUpdate(callSid, {
+            callSid,
+            actualPaise,
+            source,
+            currency,
+            invoicedAt
+        });
+    }
+
+    ledgerPath() {
+        return path.join(this.outputDir, "billing-ledger.json");
+    }
+
+    async readLedger() {
+        if (this.ledger) return this.ledger;
+
+        try {
+            this.ledger = JSON.parse(await fs.readFile(this.ledgerPath(), "utf8"));
+        } catch {
+            this.ledger = {};
+        }
+
+        return this.ledger;
+    }
+
+    async writeLedger(trace) {
+        const callSid = trace.telephony?.callSid ?? trace.callId;
+        const ledger = await this.readLedger();
+        const current = ledger[callSid] ?? {};
+        const next = {
+            ...current,
+            callSid,
+            connectedDurationSeconds: trace.telephony?.connectedDurationSeconds ?? current.connectedDurationSeconds,
+            actualPaise: trace.telephony?.actualPaise ?? current.actualPaise,
+            reconciliation: trace.telephony?.reconciliation ?? current.reconciliation,
+            updatedAt: Date.now()
+        };
+
+        if (JSON.stringify(current) === JSON.stringify({ ...next, updatedAt: current.updatedAt })) {
+            return next;
+        }
+
+        ledger[callSid] = next;
+        await fs.mkdir(this.outputDir, { recursive: true });
+        await fs.writeFile(this.ledgerPath(), JSON.stringify(ledger, null, 2));
+        return next;
+    }
+
+    async applyLedger(trace) {
+        const callSid = trace.telephony?.callSid ?? trace.callId;
+        const entry = (await this.readLedger())[callSid];
+        if (!entry) return;
+
+        this.patchTelephony(trace, {
+            callSid,
+            connectedDurationSeconds: entry.connectedDurationSeconds,
+            actualPaise: entry.actualPaise,
+            source: entry.reconciliation?.source,
+            currency: entry.reconciliation?.currency,
+            invoicedAt: entry.reconciliation?.at,
+            durationSource: entry.connectedDurationSeconds != null ? "exotel" : null
+        });
+    }
+
+    async loadTraceFromDisk(callSid) {
+        const existing = this.completed.find((trace) =>
+            trace.callId === callSid || trace.telephony?.callSid === callSid
+        );
+        if (existing) return existing;
+
+        const file = path.join(
+            this.outputDir,
+            "calls",
+            String(callSid).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120),
+            "raw.json"
+        );
+
+        try {
+            const trace = JSON.parse(await fs.readFile(file, "utf8"));
+            this.completed.push(trace);
+            return trace;
+        } catch {
+            return null;
+        }
+    }
+
+    async maybeFetchExotelDetails(trace) {
+        const callSid = trace.telephony?.callSid;
+        if (!callSid || trace.metadata?.channel !== "exotel") return null;
+        if (Number.isInteger(trace.telephony?.actualPaise) && trace.telephony?.durationSource === "exotel") {
+            return null;
+        }
+
+        try {
+            const result = await fetchExotelCallDetails(callSid);
+            if (!result.ok) return result;
+
+            this.patchTelephony(trace, {
+                ...result.record,
+                durationSource: result.record.connectedDurationSeconds != null ? "exotel" : trace.telephony.durationSource,
+                source: result.source,
+                invoicedAt: result.fetchedAt
+            });
+            await this.writeLedger(trace);
+            return result;
+        } catch (error) {
+            console.error("[TELEMETRY] Exotel call details fetch failed:", error);
+            return { ok: false, reason: error.message };
+        }
+    }
+
+    async refreshAfterTelephony(trace) {
+        const before = JSON.stringify(trace.cost);
+        await this.applyLedger(trace);
+        await this.maybeFetchExotelDetails(trace);
+        attachCallCost(trace);
+
+        if (JSON.stringify(trace.cost) !== before) {
+            await writeCallReport(trace);
+            await writeOverviewReport(this.getAggregatedMetrics());
+        }
     }
 
     getAggregatedMetrics() {

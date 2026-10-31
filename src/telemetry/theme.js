@@ -76,6 +76,19 @@ export function money(value, symbol = "₹") {
     return `${symbol}${num(value, 2)}`;
 }
 
+export function moneyAmount(value, symbol = "₹") {
+    if (value == null || value === "") return DASH;
+    return `${symbol}${esc(value)}`;
+}
+
+export function costStatusPill(status) {
+    if (!status) return `<span class="pill">unknown</span>`;
+    if (status === "actual") return `<span class="pill pill-ok">actual</span>`;
+    if (status === "estimated") return `<span class="pill pill-warn">estimated</span>`;
+    if (status === "pending") return `<span class="pill pill-warn">pending</span>`;
+    return `<span class="pill">${esc(status.replaceAll("_", " "))}</span>`;
+}
+
 export function clock(timestamp) {
     if (!Number.isFinite(timestamp)) return DASH;
     return new Date(timestamp).toLocaleString("en-IN", {
@@ -546,7 +559,7 @@ export function page({ title, description, navLinks = [], body }) {
 <div class="backdrop" aria-hidden="true"><div class="grid"></div></div>
 
 <header class="nav">
-  <a class="logo" href="#top"><span class="logo-mark"></span>Kural</a>
+  <a class="logo" href="#top"><span class="logo-mark"></span>Yuga</a>
   <nav class="nav-links">
     ${navLinks.map((link) => `<a href="${esc(link.href)}">${esc(link.label)}</a>`).join("\n    ")}
   </nav>
@@ -557,7 +570,7 @@ ${body}
 </main>
 
 <footer class="footer">
-  <span>Kural telemetry &middot; Tokenly</span>
+  <span>Yuga telemetry &middot; Tokenly</span>
   <span class="mono">Generated ${esc(clock(Date.now()))}</span>
 </footer>
 </body>

@@ -2,7 +2,8 @@ import { buildSystemPrompt } from "../LLM/config.js";
 import { INFERENCE_CONFIG } from "../inference/config.js";
 import { Model } from "../LLM/model/model.js";
 import { Reasoner } from "../LLM/reasoner/reasoner.js";
-import { TOOL_DEFINITIONS, ORDER_CONFIRMATION, createToolExecutor } from "../LLM/reasoner/agentTools.js";
+import { toolDefinitions, ORDER_CONFIRMATION, createToolExecutor } from "../LLM/reasoner/agentTools.js";
+import { transfers as defaultTransfers } from "../telephony/callTransfer.js";
 import { Runtime } from "../LLM/runtime/runtime.js";
 import { SST_CONFIG } from "../SST/config.js";
 import telemetry from "../telemetry/telemetry.js";
@@ -15,6 +16,7 @@ import { AudioFramer } from "../SST/VAD/framer.js";
 import { VADInference } from "../SST/VAD/inference.js";
 import { initializeStrategy } from "../TTS/strategy/index.js";
 import { synthesize } from "../TTS/synthesizer/synthesizer.js";
+import { SarvamRuntime } from "../TTS/runtime/sarvam.js";
 
 const SAMPLE_RATE = 16000;
 
@@ -105,6 +107,7 @@ export class Voice {
             const reasoned = await this.reasoner.reason(transcript);
             const response = typeof reasoned === "string" ? reasoned : reasoned?.content;
             const hangup = Boolean(reasoned?.hangup);
+            const hangupReason = reasoned?.hangupReason ?? (hangup ? "goodbye" : null);
 
             if (typeof response !== "string" || !response.trim()) {
                 telemetry.endTurn(callId, {
@@ -137,7 +140,7 @@ export class Voice {
                 chars: response.length
             });
 
-            telemetry.recordModelUsage(callId, "Kokoro-82M-v1.0-ONNX", {
+            telemetry.recordModelUsage(callId, this.synthesizer.model ?? "tts", {
                 stage: STAGES.TTS,
                 audioMs: replyAudioMs,
                 chars: response.length
@@ -145,7 +148,7 @@ export class Voice {
 
             this.onEvent?.({ type: "response", text: response });
 
-            this.onAudio?.(result.audioBuffer, { hangup });
+            this.onAudio?.(result.audioBuffer, { hangup, hangupReason });
 
             telemetry.endTurn(callId, {
                 ok: true,
@@ -158,7 +161,7 @@ export class Voice {
 
             if (hangup) {
                 this.hangup = true;
-                this.onHangup?.({ afterMs: replyAudioMs ?? 4000 });
+                this.onHangup?.({ afterMs: replyAudioMs ?? 4000, reason: hangupReason });
             }
         } catch (error) {
             telemetry.recordError(callId, STAGES.TURN, error);
@@ -209,19 +212,32 @@ export class Voice {
         }
     }
 
-    static async createVoice({ onEvent, onAudio, onHangup = null, customer = null, callId = null }) {
+    static async createVoice({
+        onEvent,
+        onAudio,
+        onHangup = null,
+        customer = null,
+        callId = null,
+        channel = "browser",
+        transferContext = null,
+        transfer = null
+    }) {
         const framer = new AudioFramer(512);
         const vad = new VADInference();
         const endpointer = new Endpointer(SST_CONFIG);
         const utteranceBuffer = new UtteranceBuffer();
         const llm = INFERENCE_CONFIG.llm;
+        const tts = INFERENCE_CONFIG.tts;
         const batchTranscriber = new BatchTranscriber({ url: INFERENCE_CONFIG.asr.url });
         const streamTranscriber = new StreamTranscriber(batchTranscriber);
-        const synthesizer = { synthesize };
+        const synthesizer = createTts(tts);
         const runtime = new Runtime({
             url: llm.url,
             model: llm.model,
-            apiKey: llm.apiKey || undefined,
+            fallbackModels: llm.fallbackModels,
+            apiKey: llm.apiKey || "",
+            extraHeaders: llm.extraHeaders,
+            sendTools: llm.sendTools,
             timeoutMs: llm.timeoutMs,
             retryMax: llm.retryMax,
             temperature: llm.temperature,
@@ -229,22 +245,37 @@ export class Voice {
             frequencyPenalty: llm.frequencyPenalty,
             presencePenalty: llm.presencePenalty,
             localCompat: llm.localCompat,
-            reasoningEffort: llm.reasoningEffort
+            reasoningEffort: llm.reasoningEffort,
+            provider: llm.provider
         });
         if (INFERENCE_CONFIG.mode === "provider" && !runtime.apiKey) {
-            console.error("[LLM] No API key. Set GROQ_API_KEY or LLM_API_KEY before starting the server.");
+            console.error(
+                llm.provider === "openrouter"
+                    ? "[LLM] No OpenRouter key. Set OPENROUTER_API_KEY or LLM_API_KEY before starting the server."
+                    : "[LLM] No API key. Set GROQ_API_KEY or LLM_API_KEY before starting the server."
+            );
         }
         const model = new Model({ runtime });
+        const transferApi = transfer ?? defaultTransfers;
         const reasoner = new Reasoner({
             model,
-            systemPrompt: buildSystemPrompt({ customer }),
+            systemPrompt: buildSystemPrompt({
+                customer,
+                departments: transferApi.listDepartments()
+            }),
             maxHistoryMessages: llm.maxHistoryMessages,
-            tools: TOOL_DEFINITIONS,
-            executeTool: createToolExecutor({ customer }),
+            tools: toolDefinitions(transferApi),
+            executeTool: createToolExecutor({
+                customer,
+                callId,
+                channel,
+                transfer: transferApi
+            }),
             maxToolRounds: llm.maxToolRounds,
             confirmation: ORDER_CONFIRMATION,
             customer,
-            callId
+            callId,
+            transferContext
         });
         const voice = new Voice({
             audioFramer: framer,
@@ -262,8 +293,39 @@ export class Voice {
         });
 
         await vad.init();
-        await initializeStrategy("en");
+        if (tts.provider === "kokoro-local") {
+            await initializeStrategy("en");
+        }
 
         return { voice, synthesizer };
     };
 };
+
+function createTts(tts) {
+    if (tts.provider === "sarvam") {
+        const runtime = new SarvamRuntime({
+            url: tts.url,
+            model: tts.model,
+            speaker: tts.speaker,
+            language: tts.language,
+            sampleRate: tts.sampleRate,
+            apiKey: tts.apiKey || undefined
+        });
+
+        if (!runtime.apiKey) {
+            console.error("[TTS] No Sarvam key. Hardcode it on SarvamRuntime like the Groq key on Runtime.");
+        }
+
+        return {
+            provider: "sarvam",
+            model: tts.model,
+            synthesize: (text, options) => runtime.synthesize(text, options)
+        };
+    }
+
+    return {
+        provider: "kokoro-local",
+        model: "Kokoro-82M-v1.0-ONNX",
+        synthesize
+    };
+}

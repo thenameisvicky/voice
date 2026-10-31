@@ -1,3 +1,4 @@
+import "./src/env.js";
 import http from "http";
 import fs from "fs";
 import path from "path";
@@ -5,6 +6,15 @@ import { randomUUID } from "crypto";
 import { WebSocketServer } from "ws";
 import { Voice } from "./src/voice/voice.js";
 import { handleExotelConnection } from "./src/telephony/exotel.js";
+import {
+    handleExotelBillingRequest,
+    handleExotelStatusRequest
+} from "./src/telephony/exotelStatus.js";
+import {
+    handleExotelConnectRequest,
+    handleExotelDialEventRequest,
+    transfers
+} from "./src/telephony/callTransfer.js";
 import telemetry from "./src/telemetry/telemetry.js";
 import { TELEMETRY_CONFIG } from "./src/telemetry/config.js";
 import {
@@ -31,6 +41,7 @@ const CONTENT_TYPES = {
 };
 
 const TELEMETRY_ROOT = path.resolve(TELEMETRY_CONFIG.outputDir);
+const PRESENTATION_FILE = path.resolve("./presentation/yuga.html");
 
 function resolveTelemetry(urlPath) {
     const relative = urlPath.replace(/^\/telemetry\/?/, "") || "index.html";
@@ -51,9 +62,51 @@ const server = http.createServer((req, res) => {
 
     const { pathname } = new URL(req.url, "http://localhost");
 
+    if (req.method === "POST" && pathname === "/exotel/status") {
+        handleExotelStatusRequest(req, res, telemetry, {
+            onCallRecord: (parsed) => transfers.onCallRecord(parsed)
+        }).catch((error) => {
+            console.error("[EXOTEL] Status callback failed:", error);
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "status callback failed" }));
+        });
+        return;
+    }
+
+    if (req.method === "GET" && pathname === "/exotel/connect") {
+        try {
+            handleExotelConnectRequest(req, res);
+        } catch (error) {
+            console.error("[EXOTEL] Connect request failed:", error);
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ destination: { numbers: [] } }));
+        }
+        return;
+    }
+
+    if ((req.method === "GET" || req.method === "POST") && pathname === "/exotel/connect/events") {
+        handleExotelDialEventRequest(req, res).catch((error) => {
+            console.error("[EXOTEL] Dial event failed:", error);
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "dial event failed" }));
+        });
+        return;
+    }
+
+    if (req.method === "POST" && pathname === "/exotel/billing") {
+        handleExotelBillingRequest(req, res, telemetry).catch((error) => {
+            console.error("[EXOTEL] Billing import failed:", error);
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, error: "billing import failed" }));
+        });
+        return;
+    }
+
     const file = pathname.startsWith("/telemetry")
         ? resolveTelemetry(pathname)
-        : path.join("./views", pathname === "/audioProcessor.js" ? "audioProcessor.js" : "index.html");
+        : (pathname === "/yuga" || pathname === "/presentation" || pathname === "/presentation/yuga.html")
+            ? PRESENTATION_FILE
+            : path.join("./views", pathname === "/audioProcessor.js" ? "audioProcessor.js" : "index.html");
 
     if (!file) {
         res.writeHead(404, { "Content-Type": "text/plain" });
@@ -202,6 +255,14 @@ async function start() {
     }
 
     logInferenceConfig(INFERENCE_CONFIG);
+    if (transfers.config.enabled) {
+        console.log(
+            `[EXOTEL] Transfer departments: ${transfers.listDepartments().map((entry) => entry.id).join(", ")}`
+        );
+        console.log(`[EXOTEL] Public base ${transfers.config.publicBaseUrl}`);
+    } else {
+        console.log("[EXOTEL] Transfer destinations are not configured");
+    }
 
     await telemetry.measureBaseline();
 

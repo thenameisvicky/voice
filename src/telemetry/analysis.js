@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { attachCallCost, summarizeSpend } from "./cost.js";
 import {
     BENCHMARK_LEVELS,
     COST_MODEL,
@@ -66,6 +67,25 @@ export function boxCostPerHour() {
     const power = (COST_MODEL.machineWatts / 1000) * COST_MODEL.electricityPerKwh;
 
     return { capex, power, total: capex + power };
+}
+
+export function modeledCallCost(durationMs) {
+    if (!(durationMs > 0)) {
+        return { available: false, compute: null, telephony: null, perCall: null };
+    }
+
+    const box = boxCostPerHour();
+    const hours = durationMs / 3_600_000;
+    const minutes = durationMs / 60_000;
+    const compute = box.total * hours;
+    const telephony = minutes * COST_MODEL.telephonyPerMinute;
+
+    return {
+        available: true,
+        compute,
+        telephony,
+        perCall: compute + telephony
+    };
 }
 
 export function costPerCompletedCall({ callsPerHour, successfulCallsPerHour, callMinutes }) {
@@ -233,6 +253,7 @@ export function describeCall(trace) {
 
     const durationMinutes = (trace.durationMs ?? 0) / 60000;
     const completed = trace.businessActions.some((action) => action.ok);
+    const accounting = trace.cost ?? attachCallCost(trace);
 
     const cost = costPerCompletedCall({
         callsPerHour: durationMinutes > 0 ? 60 / durationMinutes : 0,
@@ -267,6 +288,12 @@ export function describeCall(trace) {
         errorRatePct: trace.spans.length > 0 ? (failures / trace.spans.length) * 100 : 0,
         costPerCompletedCall: cost.perCompletedCall,
         cost,
+        modeledCallCost: modeledCallCost(trace.durationMs),
+        costPerCall: accounting.actual_total_cost
+            ?? accounting.estimated_total_cost
+            ?? accounting.actual_telephony_cost
+            ?? accounting.estimated_telephony_cost
+            ?? null,
 
         cpuSeconds: netCpuMs(trace.resource, trace) / 1000,
         coresBusy: trace.resource?.coresBusy ?? null,
@@ -282,8 +309,11 @@ export function describeCall(trace) {
         queueWaitMs: summarize((trace.queueWaits ?? []).map((wait) => wait.waitMs)),
         toolCalls: turns.flatMap((turn) => turn.toolCalls),
         businessActions: trace.businessActions,
+        transfer: trace.transfer ?? null,
         completed,
         errors: trace.errors,
+        accounting,
+        telephony: accounting.telephony,
         spanCount: trace.spans.length,
         spanFailures: failures,
         samples
@@ -309,7 +339,8 @@ export function analyzeCalls(traces) {
         turnsPerCall: summarize(calls.map((call) => call.turnCount)),
         tokensPerCall: summarize(calls.map((call) => call.tokens.total)),
         stackRssDeltaBytes: summarize(calls.map((call) => call.stackRssDeltaBytes)),
-        errorRatePct: summarize(calls.map((call) => call.errorRatePct))
+        errorRatePct: summarize(calls.map((call) => call.errorRatePct)),
+        spend: summarizeSpend(traces)
     };
 }
 
@@ -656,6 +687,7 @@ export function analyze(aggregate) {
         call,
         benchmark: bench,
         answers: { compute, concurrency, cost, hardware },
+        spend: call.spend,
         assumptions: COST_MODEL,
         targets: SLO_TARGETS
     };
@@ -667,6 +699,7 @@ export function analyzeOne(trace) {
         host: trace.host,
         baseline: trace.baseline,
         detail: describeCall(trace),
-        inference: analyzeInferences([trace])
+        inference: analyzeInferences([trace]),
+        spend: summarizeSpend([trace])
     };
 }

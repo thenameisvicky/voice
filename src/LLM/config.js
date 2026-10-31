@@ -1,3 +1,5 @@
+import "../env.js";
+
 export const CALL_OUTRO = "Thank you, have a nice day.";
 
 const LOCAL = {
@@ -13,10 +15,32 @@ const GROQ = {
     baseUrl: "https://api.groq.com/openai/v1",
     model: "openai/gpt-oss-120b",
     maxTokens: 512,
-    localCompat: false
+    localCompat: false,
+    sendTools: true
 };
 
-const PROVIDERS = { local: LOCAL, groq: GROQ };
+export const OPENROUTER_DEFAULT_MODEL = "google/gemma-4-31b-it:free";
+// Free models share upstream capacity and often 429. OpenRouter tries these in order when the primary fails.
+// nemotron-3.5-lightning is left out: it hangs (>40s) on the full prompt with tools.
+export const OPENROUTER_DEFAULT_FALLBACKS = [
+    "nvidia/nemotron-3.5-super-vl:free"
+];
+
+const OPENROUTER = {
+    provider: "openrouter",
+    baseUrl: "https://openrouter.ai/api/v1",
+    model: OPENROUTER_DEFAULT_MODEL,
+    maxTokens: 512,
+    localCompat: false,
+    sendTools: true
+};
+
+const PROVIDERS = { local: LOCAL, groq: GROQ, openrouter: OPENROUTER };
+
+export function isFreeOpenRouterModel(model) {
+    const id = String(model || "").trim();
+    return id.endsWith(":free") || id === "openrouter/free";
+}
 
 function envString(env, key, fallback = "") {
     const value = env[key];
@@ -36,18 +60,68 @@ function completionsUrl(baseUrl) {
     return `${trimmed}/chat/completions`;
 }
 
+function resolveProviderName(requested) {
+    if (PROVIDERS[requested]) return requested;
+    if (requested === "sarvam") return OPENROUTER.provider;
+    return OPENROUTER.provider;
+}
+
+function resolveApiKey(env, provider) {
+    const shared = envString(env, "LLM_API_KEY");
+    if (shared) return shared;
+    if (provider === "openrouter") return envString(env, "OPENROUTER_API_KEY");
+    if (provider === "groq") return envString(env, "GROQ_API_KEY");
+    return "";
+}
+
+function resolveModel(env, provider, preset) {
+    if (provider === "openrouter") {
+        return envString(env, "OPENROUTER_MODEL", envString(env, "LLM_MODEL", preset.model));
+    }
+    if (provider === "groq") {
+        return envString(env, "GROQ_MODEL", envString(env, "LLM_MODEL", preset.model));
+    }
+    return envString(env, "LLM_MODEL", preset.model);
+}
+
+function resolveFallbackModels(env, provider, primary) {
+    if (provider !== "openrouter") return [];
+    const raw = env.OPENROUTER_FALLBACK_MODELS;
+    const list = raw == null ? OPENROUTER_DEFAULT_FALLBACKS : String(raw).split(",");
+    return [...new Set(list.map((id) => id.trim()).filter((id) => id && id !== primary))];
+}
+
+function resolveBaseUrl(env, provider, preset) {
+    if (provider === "openrouter") {
+        return envString(env, "OPENROUTER_BASE_URL", envString(env, "LLM_BASE_URL", preset.baseUrl));
+    }
+    return envString(env, "LLM_BASE_URL", preset.baseUrl);
+}
+
+function openRouterHeaders(env) {
+    const headers = { "X-Title": envString(env, "OPENROUTER_TITLE", "Yuga") };
+    const referer = envString(env, "OPENROUTER_HTTP_REFERER");
+    if (referer) headers["HTTP-Referer"] = referer;
+    return headers;
+}
+
 export function resolveLlmConfig(env = process.env) {
-    const requested = envString(env, "LLM_PROVIDER", GROQ.provider).toLowerCase();
-    const preset = PROVIDERS[requested] || GROQ;
-    const provider = PROVIDERS[requested] ? requested : GROQ.provider;
-    const apiKey = envString(env, "LLM_API_KEY") || envString(env, "GROQ_API_KEY");
-    const baseUrl = envString(env, "LLM_BASE_URL", preset.baseUrl);
+    const requested = envString(env, "LLM_PROVIDER", OPENROUTER.provider).toLowerCase();
+    const provider = resolveProviderName(requested);
+    const preset = PROVIDERS[provider];
+    const apiKey = resolveApiKey(env, provider);
+    const baseUrl = resolveBaseUrl(env, provider, preset);
+    const model = resolveModel(env, provider, preset);
 
     return {
         provider,
+        requestedProvider: requested,
         baseUrl,
         url: completionsUrl(baseUrl),
-        model: envString(env, "LLM_MODEL", preset.model),
+        model,
+        fallbackModels: resolveFallbackModels(env, provider, model),
+        sendTools: preset.sendTools !== false,
+        extraHeaders: provider === "openrouter" ? openRouterHeaders(env) : {},
         apiKey,
         timeoutMs: envNumber(env, "LLM_TIMEOUT_MS", 30000),
         retryMax: envNumber(env, "LLM_RETRY_MAX", 1),
@@ -127,6 +201,30 @@ Do not keep chatting after a goodbye.
 Example:
 {"name":"end_call","arguments":{"reason":"goodbye"}}
 
+### transfer_to_human
+Escalate only in these cases. Do not use this tool for anything else.
+
+1. The caller asks to speak to the owner.
+2. The caller asks to speak to a human.
+3. The caller asks to speak to anyone else, someone else, or another person.
+4. You tried to complete their request and could not. Use this only after you have used the available tools, asked any needed clarification, and still cannot finish what they asked.
+
+Do not escalate because they asked for a product, a price, stock, an order change, a department name, or because the conversation is long. Keep helping them yourself.
+
+- department is always support. Never a phone number.
+- reason must be one of: owner, human, someone_else, cannot_complete.
+- Call the tool first. Then ask them to confirm the transfer. Do not start it without an explicit yes.
+- After they say yes, say only that you are connecting them now.
+- Starting the transfer does not mean a person answered. Never say they are already connected.
+- If the transfer fails, say it did not connect and keep helping them. Do not offer other departments.
+- summary is a short note for the receiving person. Do not read it aloud.
+
+Example — they asked for a person:
+{"name":"transfer_to_human","arguments":{"department":"support","reason":"human","summary":"Caller asked to speak to a human."}}
+
+Example — you could not complete the request:
+{"name":"transfer_to_human","arguments":{"department":"support","reason":"cannot_complete","summary":"Caller asked for a delivery slot. That is not a supported action."}}
+
 ## Product discovery and ordering
 
 1. Call search_catalog. Use no arguments when they want to see everything.
@@ -160,6 +258,10 @@ Do not claim a payment was received unless an authorized payment-status tool con
 
 Never execute an irreversible operation just because you inferred they wanted it. Wait for confirmation.
 
+## Human transfer
+
+Escalate only when the caller asks to speak to the owner, a human, or anyone else, or when you cannot complete their request after trying. Do not offer a transfer, and do not call transfer_to_human, for ordinary shop help. Confirm first, wait for an explicit yes, then say you are connecting them. Do not talk as if a person already answered. If it fails, continue helping them.
+
 ## Tool usage
 
 - Use these tools for all catalog, price, stock, and order information.
@@ -191,7 +293,7 @@ Never execute an irreversible operation just because you inferred they wanted it
 
 Your goal is to turn customer conversations into accurate, confirmed merchant operations.`;
 
-export function buildSystemPrompt({ customer = null } = {}) {
+export function buildSystemPrompt({ customer = null, departments = [] } = {}) {
     const customerContext = customer
         ? [
             "## Current call",
@@ -206,5 +308,19 @@ export function buildSystemPrompt({ customer = null } = {}) {
             "You can answer product and price questions, but you cannot create invoices."
         ];
 
-    return [TOKENLY_VOICE_INSTRUCTIONS, "", ...customerContext].join("\n");
+    const transferContext = departments.length > 0
+        ? [
+            "",
+            "## Escalation policy",
+            "The only transfer destination is support.",
+            "Call transfer_to_human only if the caller asked to speak to the owner, a human, or anyone else, or if you cannot complete their request after trying.",
+            "Never ask for or call a phone number."
+        ]
+        : [
+            "",
+            "## Escalation policy",
+            "Transfer is unavailable. If the caller asks for a person, say you cannot connect them and keep helping them."
+        ];
+
+    return [TOKENLY_VOICE_INSTRUCTIONS, "", ...customerContext, ...transferContext].join("\n");
 }

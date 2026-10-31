@@ -82,6 +82,8 @@ export const COST_MODEL = {
     machineWatts: 45,
     idleWatts: 12,
     electricityPerKwh: 8.5,
+    // Modelled unit-economics assumption only. Per-call Exotel charges use
+    // EXOTEL_TARIFF_* and are never taken from this number.
     telephonyPerMinute: 0.6,
     cloudPerVcpuHour: 1.6,
     managedVoiceAiPerMinute: 6.0,

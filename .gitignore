@@ -7,3 +7,6 @@ models
 # Generated telemetry reports, one folder per call.
 # Anchored, so it does not also swallow src/telemetry.
 /telemetry/
+
+# Local secrets. Copy .env.example to .env.
+.env
